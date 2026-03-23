@@ -29,9 +29,18 @@ export const authOptions: NextAuthOptions = {
     async redirect({ url, baseUrl }) {
       return url.startsWith(baseUrl) ? url : baseUrl + '/dashboard'
     },
-    async session({ session, user }) {
+    async jwt({ token, user, account }) {
+      if (user) token.id = user.id
+      if (account) {
+        token.accessToken  = account.access_token
+        token.refreshToken = account.refresh_token
+        token.expiresAt    = account.expires_at
+      }
+      return token
+    },
+    async session({ session, token }) {
       if (session.user) {
-        (session.user as any).id = user.id
+        (session.user as any).id = token.id as string
       }
       return session
     },
@@ -42,6 +51,6 @@ export const authOptions: NextAuthOptions = {
   },
 
   session: {
-    strategy: 'database',
+    strategy: 'jwt',
   },
 }
