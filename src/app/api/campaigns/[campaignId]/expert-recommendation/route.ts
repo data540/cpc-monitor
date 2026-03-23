@@ -4,7 +4,7 @@ import { prisma } from '@/lib/prisma'
 import { getCpcDistribution } from '@/lib/google-ads'
 import { computeOptimalCeiling } from '@/lib/expert-cpc'
 import { getValidAccessToken } from '@/lib/refresh-token'
-import { CampaignMetrics } from '@/types'
+import { CampaignMetrics, TrendData } from '@/types'
 
 export async function GET(
   request: Request,
@@ -42,7 +42,7 @@ export async function GET(
       dateRangeEnd   = fmt(end)
     }
 
-    // ── Último snapshot de la campaña (métricas agregadas) ───────
+    // ── Último snapshot (métricas actuales) ──────────────────────
     const snapshot = await prisma.campaignSnapshot.findFirst({
       where:   { userId, campaignId: params.campaignId },
       orderBy: { capturedAt: 'desc' },
@@ -67,11 +67,60 @@ export async function GET(
       ctr:                      snapshot.ctr,
       costEur:                  snapshot.costEur,
       isActual:                 snapshot.isActual,
+      isLostBudget:             (snapshot as any).isLostBudget ?? null,
+      isLostRank:               (snapshot as any).isLostRank   ?? null,
       topImpressionPct:         null,
       absoluteTopImpressionPct: null,
       targetRoas:               snapshot.targetRoas,
       realRoas:                 snapshot.realRoas,
       recommendation:           { level: 'ok', message: '', parts: [] },
+    }
+
+    // ── Tendencia histórica (últimos 10 snapshots) ────────────────
+    const history = await prisma.campaignSnapshot.findMany({
+      where:   { userId, campaignId: params.campaignId },
+      orderBy: { capturedAt: 'asc' },
+      take:    10,
+      select:  { capturedAt: true, avgCpc: true, isActual: true },
+    })
+
+    let trend: TrendData | null = null
+
+    if (history.length >= 3) {
+      const first = history[0]
+      const last  = history[history.length - 1]
+
+      const cpcChangePct = first.avgCpc > 0
+        ? Math.round(((last.avgCpc - first.avgCpc) / first.avgCpc) * 1000) / 10
+        : 0
+      const cpcDirection: TrendData['direction'] =
+        Math.abs(cpcChangePct) < 5 ? 'stable' : cpcChangePct > 0 ? 'up' : 'down'
+
+      let isDirection: TrendData['isDirection'] = null
+      let isChangePct: number | null = null
+
+      if (first.isActual !== null && last.isActual !== null && first.isActual > 0) {
+        const rawChange = ((last.isActual - first.isActual) / first.isActual) * 100
+        isChangePct  = Math.round(rawChange * 10) / 10
+        isDirection  = Math.abs(isChangePct) < 5 ? 'stable' : isChangePct > 0 ? 'up' : 'down'
+      }
+
+      const periodDays = Math.max(
+        Math.round(
+          (new Date(last.capturedAt).getTime() - new Date(first.capturedAt).getTime()) /
+          (1000 * 60 * 60 * 24)
+        ),
+        1
+      )
+
+      trend = {
+        direction:    cpcDirection,
+        cpcChangePct,
+        isDirection,
+        isChangePct,
+        dataPoints:   history.length,
+        periodDays,
+      }
     }
 
     // ── Distribución de CPC (para p90, mediana, etc.) ────────────
@@ -87,14 +136,18 @@ export async function GET(
         { start: dateRangeStart, end: dateRangeEnd }
       )
     } catch (e) {
-      // Si falla la distribución, el motor trabaja solo con métricas del snapshot
       console.warn('[expert-recommendation] No se pudo obtener distribución:', e)
     }
 
     // ── Calcular recomendación ────────────────────────────────────
-    const recommendation = computeOptimalCeiling({ metrics, distribution })
+    const recommendation = computeOptimalCeiling({ metrics, distribution, trend })
 
-    return Response.json({ recommendation, metrics, distributionAvailable: distribution !== null })
+    return Response.json({
+      recommendation,
+      metrics,
+      distributionAvailable: distribution !== null,
+      trend,
+    })
   } catch (error) {
     console.error('[expert-recommendation]', error)
     const message = error instanceof Error ? error.message : 'Unknown error'

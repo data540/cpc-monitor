@@ -11,6 +11,8 @@ export interface CampaignMetrics {
   ctr:                     number          // porcentaje
   costEur:                 number
   isActual:                number | null   // 0-1  Search Impression Share
+  isLostBudget:            number | null   // 0-1  IS perdida por presupuesto
+  isLostRank:              number | null   // 0-1  IS perdida por ranking de puja
   topImpressionPct:        number | null   // 0-1  Primera posición
   absoluteTopImpressionPct:number | null   // 0-1  Primera posición absoluta
   targetRoas:              number | null
@@ -66,6 +68,16 @@ export interface ExpertRecommendation {
   confidence:       'high' | 'medium' | 'low'
   scenario:         'raise_constrained' | 'raise_losing_traffic' | 'lower_underperforming' | 'hold_no_ceiling' | 'hold_stable'
   reasoning:        string[]
+}
+
+// Tendencia histórica de métricas clave
+export interface TrendData {
+  direction:    'up' | 'down' | 'stable'   // tendencia del avgCpc
+  cpcChangePct: number                      // % cambio primer→último snapshot
+  isDirection:  'up' | 'down' | 'stable' | null
+  isChangePct:  number | null
+  dataPoints:   number                      // nº snapshots usados
+  periodDays:   number                      // días cubiertos
 }
 
 // Distribución de CPC por hora para una campaña

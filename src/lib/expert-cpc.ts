@@ -1,8 +1,8 @@
 // ── Motor Experto de CPC ───────────────────────────────────────
-// Calcula el techo de CPC óptimo a partir de las métricas de campaña
-// y (opcionalmente) los datos de distribución estadística.
+// Calcula el techo de CPC óptimo a partir de las métricas de campaña,
+// la distribución estadística y la tendencia histórica.
 
-import { CampaignMetrics, CpcDistributionData } from '@/types'
+import { CampaignMetrics, CpcDistributionData, TrendData } from '@/types'
 
 export interface ExpertRecommendation {
   suggestedCeiling: number
@@ -15,12 +15,14 @@ export interface ExpertRecommendation {
                   | 'lower_underperforming'
                   | 'hold_no_ceiling'
                   | 'hold_stable'
+                  | 'hold_budget_bottleneck'
   reasoning:        string[]
 }
 
 interface EngineInput {
   metrics:      CampaignMetrics
   distribution: CpcDistributionData | null
+  trend:        TrendData | null
 }
 
 // ── Umbrales ──────────────────────────────────────────────────
@@ -29,13 +31,14 @@ const ROAS_OVERPERFORM_THRESHOLD   = 1.15
 const ROAS_UNDERPERFORM_THRESHOLD  = 0.90
 const CPC_SATURATION_THRESHOLD     = 82
 const IS_LOW_THRESHOLD             = 0.75
+const IS_RANK_DOMINANT_THRESHOLD   = 0.60   // >60% de la IS perdida es por ranking → techo CPC es el cuello de botella
 const MIN_CLICKS_HIGH_CONFIDENCE   = 150
 const MIN_CLICKS_MEDIUM_CONFIDENCE = 50
 
 // ── Función principal ─────────────────────────────────────────
 
 export function computeOptimalCeiling(input: EngineInput): ExpertRecommendation {
-  const { metrics: m, distribution: dist } = input
+  const { metrics: m, distribution: dist, trend } = input
   const reasoning: string[] = []
 
   // ── Señales derivadas ─────────────────────────────────────────
@@ -44,14 +47,12 @@ export function computeOptimalCeiling(input: EngineInput): ExpertRecommendation 
     ? m.realRoas / m.targetRoas
     : null
 
-  // CPC máximo admisible para cubrir el ROAS objetivo:
-  // breakEvenCpc = conversionValue_per_click / targetRoas
-  // Aproximación: avgCpc * (realRoas / targetRoas)
+  // CPC máximo admisible para cubrir el ROAS objetivo
   const breakEvenCpc = (m.avgCpc > 0 && efficiencyRatio !== null)
     ? round2(m.avgCpc * efficiencyRatio)
     : null
 
-  // Impresiones estimadas que se están perdiendo
+  // Impresiones estimadas perdidas
   const lostImpressions = (m.isActual && m.isActual > 0 && m.isActual < 1)
     ? Math.round(m.impressions / m.isActual * (1 - m.isActual))
     : null
@@ -66,6 +67,18 @@ export function computeOptimalCeiling(input: EngineInput): ExpertRecommendation 
     ? round2(dist.stats.stdDev / dist.stats.avgCpc)
     : null
 
+  // ── IS decomposición: ¿por qué se pierde IS? ──────────────────
+
+  const totalIsLost = (m.isLostBudget ?? 0) + (m.isLostRank ?? 0)
+  const rankShare   = totalIsLost > 0.01 && m.isLostRank != null
+    ? m.isLostRank / totalIsLost
+    : null  // % de la IS perdida atribuible a ranking de puja
+
+  // El techo de CPC es el cuello de botella cuando la mayoría de la pérdida es por ranking
+  const rankIsDominantBottleneck = rankShare !== null && rankShare >= IS_RANK_DOMINANT_THRESHOLD
+  // El presupuesto es el cuello de botella
+  const budgetIsDominantBottleneck = rankShare !== null && rankShare < (1 - IS_RANK_DOMINANT_THRESHOLD)
+
   // ── Bloque 0: sin techo configurado ──────────────────────────
 
   if (!m.cpcCeiling) {
@@ -73,9 +86,7 @@ export function computeOptimalCeiling(input: EngineInput): ExpertRecommendation 
       ? round2(dist.stats.p90 * 1.1)
       : round2(m.avgCpc * 1.3)
 
-    reasoning.push(
-      `No hay techo de CPC configurado en esta campaña.`
-    )
+    reasoning.push(`No hay techo de CPC configurado en esta campaña.`)
     if (dist) {
       reasoning.push(
         `El p90 de CPCs reales es €${f2(dist.stats.p90)}, lo que significa que el 90% de las pujas ` +
@@ -157,54 +168,122 @@ export function computeOptimalCeiling(input: EngineInput): ExpertRecommendation 
         `hay margen técnico para reducirlo sin bloquear el volumen existente.`
       )
     }
-
-  // ── Bloque 2: sobrerendimiento con restricción ────────────────
-
-  } else if (overperforming && (isSaturated || isLosingIS)) {
-    scenario = 'raise_losing_traffic'
-    const multiplier = Math.min(efficiencyRatio ?? 1.2, 1.35)
-    suggested = round2(anchor * multiplier)
-
-    if (efficiencyRatio !== null && m.realRoas && m.targetRoas) {
-      const surplus = Math.round((efficiencyRatio - 1) * 100)
-      reasoning.push(
-        `ROAS real: ${f2(m.realRoas)} vs objetivo: ${f2(m.targetRoas)} — superávit del ${surplus}%. ` +
-        `La campaña genera ${f2(m.realRoas)} € por cada € invertido, ${surplus}% más de lo requerido. ` +
-        `Hay rentabilidad de sobra para absorber un CPC más alto.`
-      )
-    }
-    if (isSaturated && m.cpcUsagePct !== null) {
-      reasoning.push(
-        `El CPC medio está al ${f2(m.cpcUsagePct)}% del techo — Google ya no puede pujar ` +
-        `más en subastas que lo requieran. Esto limita el alcance en las franjas horarias ` +
-        `y palabras clave más competidas.`
-      )
-    }
-    if (isLosingIS && m.isActual !== null) {
-      const isPct = Math.round(m.isActual * 100)
-      reasoning.push(
-        `Impression Share del ${isPct}%${lostImpressions ? ` — se estiman ~${lostImpressions.toLocaleString('es-ES')} impresiones perdidas` : ''}. ` +
-        `Con una IS más alta captarías más clics del mismo tráfico de búsqueda sin aumentar el CPC real promedio, ` +
-        `solo ampliar el rango de subastas en las que participas.`
-      )
-    }
-    if (dist) {
-      reasoning.push(
-        `El p90 de CPCs pagados es €${f2(dist.stats.p90)} (ancla del cálculo). ` +
-        `Subir el techo a €${f2(suggested)} (p90 × ${f2(multiplier)}) permitiría ` +
-        `ganar las subastas del decil superior sin comprometer la rentabilidad media.`
-      )
-      if (cpcPercentileInDist !== null) {
+    // Tendencia refuerza o modera la señal
+    if (trend && trend.dataPoints >= 3) {
+      if (trend.direction === 'up') {
         reasoning.push(
-          `Tu CPC medio actual (€${f2(m.avgCpc)}) equivale al percentil ~${cpcPercentileInDist} ` +
-          `de la distribución observada — hay recorrido real hacia arriba.`
+          `⚠ Tendencia: el CPC medio ha subido un ${Math.abs(trend.cpcChangePct)}% ` +
+          `en los últimos ${trend.periodDays} días (${trend.dataPoints} capturas). ` +
+          `La presión alcista refuerza la necesidad de ajustar el techo a la baja.`
+        )
+      } else if (trend.direction === 'down') {
+        reasoning.push(
+          `ℹ Tendencia: el CPC medio ha bajado un ${Math.abs(trend.cpcChangePct)}% ` +
+          `en los últimos ${trend.periodDays} días — el mercado ya se está ajustando. ` +
+          `Monitorizar antes de reducir el techo adicionalmente.`
         )
       }
-    } else {
+    }
+
+  // ── Bloque 2: sobrerendimiento + IS perdida ────────────────────
+  //    Subdivisión: ¿el cuello de botella es el techo CPC o el presupuesto?
+
+  } else if (overperforming && (isSaturated || isLosingIS)) {
+
+    // Sub-caso 2b: la pérdida de IS es mayoritariamente por presupuesto, no por ranking
+    if (isLosingIS && budgetIsDominantBottleneck && m.isLostBudget !== null && m.isLostRank !== null) {
+      scenario = 'hold_budget_bottleneck'
+      suggested = round2(m.cpcCeiling)   // no mover el techo
+
+      if (efficiencyRatio !== null && m.realRoas && m.targetRoas) {
+        const surplus = Math.round((efficiencyRatio - 1) * 100)
+        reasoning.push(
+          `ROAS real: ${f2(m.realRoas)} vs objetivo: ${f2(m.targetRoas)} — superávit del ${surplus}%. ` +
+          `La campaña es rentable y tiene margen.`
+        )
+      }
+      const isPct       = Math.round((m.isActual ?? 0) * 100)
+      const budgetLostPct = Math.round(m.isLostBudget * 100)
+      const rankLostPct   = Math.round(m.isLostRank * 100)
       reasoning.push(
-        `Sin datos de distribución, el techo propuesto (€${f2(suggested)}) ` +
-        `aplica un multiplicador de ×${f2(multiplier)} sobre el CPC medio.`
+        `IS del ${isPct}% — pérdida de impresiones: ${budgetLostPct}% por presupuesto vs ${rankLostPct}% por ranking. ` +
+        `El cuello de botella es el presupuesto, no el techo de CPC. ` +
+        `Subir el CPC no recuperaría estas impresiones; solo incrementaría el coste por clic pagado.`
       )
+      reasoning.push(
+        `Recomendación: mantener el techo CPC actual (€${f2(m.cpcCeiling)}) y valorar aumentar el presupuesto ` +
+        `diario si el objetivo es capturar más volumen.`
+      )
+      if (lostImpressions) {
+        reasoning.push(
+          `Se estiman ~${lostImpressions.toLocaleString('es-ES')} impresiones perdidas por restricción de presupuesto.`
+        )
+      }
+
+    } else {
+      // Sub-caso 2a: pérdida de IS por ranking → el techo CPC limita el alcance
+      scenario = 'raise_losing_traffic'
+      const multiplier = Math.min(efficiencyRatio ?? 1.2, 1.35)
+      suggested = round2(anchor * multiplier)
+
+      if (efficiencyRatio !== null && m.realRoas && m.targetRoas) {
+        const surplus = Math.round((efficiencyRatio - 1) * 100)
+        reasoning.push(
+          `ROAS real: ${f2(m.realRoas)} vs objetivo: ${f2(m.targetRoas)} — superávit del ${surplus}%. ` +
+          `La campaña genera ${f2(m.realRoas)} € por cada € invertido, ${surplus}% más de lo requerido. ` +
+          `Hay rentabilidad de sobra para absorber un CPC más alto.`
+        )
+      }
+      // IS decomposition
+      if (m.isLostRank !== null && m.isLostBudget !== null && totalIsLost > 0.01) {
+        const rankLostPct   = Math.round(m.isLostRank * 100)
+        const budgetLostPct = Math.round(m.isLostBudget * 100)
+        reasoning.push(
+          `IS del ${Math.round((m.isActual ?? 0) * 100)}% — ` +
+          `${rankLostPct}% de IS perdida por ranking de puja (techo CPC insuficiente) vs ${budgetLostPct}% por presupuesto. ` +
+          `El techo actual está limitando directamente el alcance en subastas competidas.`
+        )
+      } else if (isSaturated && m.cpcUsagePct !== null) {
+        reasoning.push(
+          `El CPC medio está al ${f2(m.cpcUsagePct)}% del techo — Google ya no puede pujar ` +
+          `más en subastas que lo requieran. Esto limita el alcance en las franjas horarias ` +
+          `y palabras clave más competidas.`
+        )
+      }
+      if (isLosingIS && m.isActual !== null && !(m.isLostRank !== null)) {
+        const isPct = Math.round(m.isActual * 100)
+        reasoning.push(
+          `Impression Share del ${isPct}%${lostImpressions ? ` — se estiman ~${lostImpressions.toLocaleString('es-ES')} impresiones perdidas` : ''}. ` +
+          `Con una IS más alta captarías más clics del mismo tráfico de búsqueda sin aumentar el CPC real promedio, ` +
+          `solo ampliar el rango de subastas en las que participas.`
+        )
+      }
+      if (dist) {
+        reasoning.push(
+          `El p90 de CPCs pagados es €${f2(dist.stats.p90)} (ancla del cálculo). ` +
+          `Subir el techo a €${f2(suggested)} (p90 × ${f2(multiplier)}) permitiría ` +
+          `ganar las subastas del decil superior sin comprometer la rentabilidad media.`
+        )
+        if (cpcPercentileInDist !== null) {
+          reasoning.push(
+            `Tu CPC medio actual (€${f2(m.avgCpc)}) equivale al percentil ~${cpcPercentileInDist} ` +
+            `de la distribución observada — hay recorrido real hacia arriba.`
+          )
+        }
+      } else {
+        reasoning.push(
+          `Sin datos de distribución, el techo propuesto (€${f2(suggested)}) ` +
+          `aplica un multiplicador de ×${f2(multiplier)} sobre el CPC medio.`
+        )
+      }
+      // Tendencia IS refuerza la señal
+      if (trend && trend.dataPoints >= 3 && trend.isDirection === 'down') {
+        reasoning.push(
+          `⚠ Tendencia: la IS ha bajado un ${Math.abs(trend.isChangePct ?? 0)}% ` +
+          `en los últimos ${trend.periodDays} días — la pérdida de cobertura se está acelerando. ` +
+          `Actuar antes de que el algoritmo pierda más señal de conversión.`
+        )
+      }
     }
 
   // ── Bloque 3: techo saturado, ROAS aceptable ──────────────────
@@ -245,6 +324,25 @@ export function computeOptimalCeiling(input: EngineInput): ExpertRecommendation 
       reasoning.push(
         `ROAS en rango objetivo (${f2(m.realRoas)} vs ${f2(m.targetRoas)}) — ` +
         `el ajuste es conservador para mantener la eficiencia actual.`
+      )
+    }
+    // IS decomposition en bloque 3
+    if (m.isLostRank !== null && m.isLostBudget !== null && totalIsLost > 0.01) {
+      const rankLostPct   = Math.round(m.isLostRank * 100)
+      const budgetLostPct = Math.round(m.isLostBudget * 100)
+      reasoning.push(
+        `IS decomposición: ${rankLostPct}% perdida por ranking de puja vs ${budgetLostPct}% por presupuesto. ` +
+        `${rankIsDominantBottleneck
+          ? 'El techo CPC es el principal freno — la subida es especialmente oportuna.'
+          : 'El presupuesto también limita la IS — considerar revisarlo en paralelo.'
+        }`
+      )
+    }
+    // Tendencia CPC
+    if (trend && trend.dataPoints >= 3 && trend.direction === 'up') {
+      reasoning.push(
+        `ℹ Tendencia: el CPC medio lleva ${trend.periodDays} días subiendo (+${trend.cpcChangePct}%). ` +
+        `Si la tendencia continúa, el techo actual se quedará pequeño antes de lo previsto.`
       )
     }
 
@@ -288,6 +386,26 @@ export function computeOptimalCeiling(input: EngineInput): ExpertRecommendation 
         `(rango intercuartil). El CPC actual se comporta dentro de la distribución histórica normal.`
       )
     }
+    // Tendencia estable o bajista refuerza el hold
+    if (trend && trend.dataPoints >= 3) {
+      if (trend.direction === 'stable') {
+        reasoning.push(
+          `Tendencia: CPC estable en los últimos ${trend.periodDays} días ` +
+          `(variación < 5% en ${trend.dataPoints} capturas) — no hay presión de mercado que justifique un cambio.`
+        )
+      } else if (trend.direction === 'down') {
+        reasoning.push(
+          `ℹ Tendencia: el CPC medio ha bajado un ${Math.abs(trend.cpcChangePct)}% ` +
+          `en los últimos ${trend.periodDays} días — el mercado se está relajando. ` +
+          `Buen momento para mantener el techo y dejar que el algoritmo optimice.`
+        )
+      } else if (trend.direction === 'up') {
+        reasoning.push(
+          `ℹ Tendencia: el CPC medio ha subido un ${trend.cpcChangePct}% en ${trend.periodDays} días. ` +
+          `Todavía dentro del rango aceptable, pero vigilar si la tendencia continúa.`
+        )
+      }
+    }
   }
 
   // ── Bloque 5: guardrails ──────────────────────────────────────
@@ -310,9 +428,10 @@ export function computeOptimalCeiling(input: EngineInput): ExpertRecommendation 
   const hasRoas = m.realRoas !== null && m.targetRoas !== null
   const hasIS   = m.isActual !== null
   const hasDist = dist !== null
+  const hasTrend = trend !== null && trend.dataPoints >= 3
 
   if (m.clicks >= MIN_CLICKS_HIGH_CONFIDENCE && hasRoas && hasIS && hasDist) {
-    confidence = 'high'
+    confidence = hasTrend ? 'high' : 'high'
   } else if (m.clicks >= MIN_CLICKS_MEDIUM_CONFIDENCE && (hasRoas || hasDist)) {
     confidence = 'medium'
   } else {

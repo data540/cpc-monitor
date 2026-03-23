@@ -60,6 +60,8 @@ export async function GET(request: Request) {
           ctr:           m.ctr,
           costEur:       m.costEur,
           isActual:      m.isActual,
+          isLostBudget:  m.isLostBudget,
+          isLostRank:    m.isLostRank,
           targetRoas:    m.targetRoas,
           realRoas:      m.realRoas,
           recommendation: m.recommendation.message,

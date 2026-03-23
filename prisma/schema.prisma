@@ -80,6 +80,8 @@ model CampaignSnapshot {
   costEur         Float
 
   isActual        Float?   // Impression Share 0-1
+  isLostBudget    Float?   // IS perdida por presupuesto 0-1
+  isLostRank      Float?   // IS perdida por ranking de puja 0-1
   targetRoas      Float?
   realRoas        Float?
 
