@@ -3,8 +3,12 @@ import './globals.css'
 import { Providers } from './providers'
 
 export const metadata: Metadata = {
-  title: 'CPC Monitor — Google Ads',
+  title: 'CPC Monitor',
   description: 'Monitorización de CPC máximo para campañas con ROAS objetivo',
+  icons: {
+    icon: '/icon.svg',
+    apple: '/icon.svg',
+  },
 }
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {

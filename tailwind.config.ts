@@ -13,13 +13,19 @@ const config: Config = {
           base:    '#0a0a0a',
           surface: '#111111',
           card:    '#161616',
-          border:  '#242424',
+          border:  '#1e1e1e',
           hover:   '#1c1c1c',
         },
         text: {
           primary:   '#e8e8e8',
           secondary: '#888888',
           tertiary:  '#444444',
+        },
+        cyan: {
+          dim:     '#002233',
+          DEFAULT: '#00D4FF',
+          bright:  '#66E8FF',
+          muted:   '#00A8CC',
         },
         amber: {
           dim:    '#3d2800',
@@ -43,9 +49,9 @@ const config: Config = {
       },
       borderRadius: {
         sm: '3px',
-        DEFAULT: '6px',
-        md: '8px',
-        lg: '12px',
+        DEFAULT: '4px',
+        md: '6px',
+        lg: '10px',
       },
     },
   },

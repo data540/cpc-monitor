@@ -173,12 +173,32 @@ export function CampaignTable({ metrics, customerId, onRefresh, onSelectCampaign
   return (
     <div className="flex flex-col gap-4">
 
+      {/* ── Header "Top Campaigns" ────────────────────────────── */}
+      <div className="flex items-center justify-between">
+        <div className="flex items-center gap-3">
+          <h2 className="num text-sm font-bold text-text-primary tracking-widest uppercase">Top Campaigns</h2>
+          <span className="num text-[9px] px-2 py-0.5 rounded-sm tracking-[0.2em] uppercase border"
+                style={{ background: 'rgba(0,212,255,0.08)', borderColor: 'rgba(0,212,255,0.25)', color: '#00D4FF' }}>
+            LIVE MONITORING
+          </span>
+        </div>
+        <div className="flex items-center gap-2">
+          <button className="num text-[10px] px-3 py-1 rounded-sm border tracking-widest uppercase transition-colors"
+                  style={{ background: 'rgba(0,212,255,0.1)', borderColor: 'rgba(0,212,255,0.3)', color: '#00D4FF' }}>
+            Performance
+          </button>
+          <button className="num text-[10px] px-3 py-1 rounded-sm border border-bg-border text-text-tertiary tracking-widest uppercase hover:text-text-secondary transition-colors">
+            Bidding
+          </button>
+        </div>
+      </div>
+
       {/* ── Barra de acción bulk ─────────────────────────────── */}
       <div className={clsx(
         'sticky top-[57px] z-10 transition-all duration-200',
         selected.size > 0 ? 'opacity-100' : 'opacity-0 pointer-events-none'
       )}>
-        <div className="bg-bg-surface border border-bg-border rounded-lg px-4 py-3 flex flex-wrap items-center gap-3 shadow-lg">
+        <div className="bg-bg-surface border border-bg-border rounded px-4 py-3 flex flex-wrap items-center gap-3 shadow-lg">
           <span className="num text-sm text-text-secondary">
             {selected.size} campaña{selected.size !== 1 ? 's' : ''} seleccionada{selected.size !== 1 ? 's' : ''}
           </span>
@@ -190,12 +210,13 @@ export function CampaignTable({ metrics, customerId, onRefresh, onSelectCampaign
               value={newCpc}
               onChange={e => setNewCpc(e.target.value)}
               placeholder="0.00"
-              className="num text-sm w-24 bg-bg-card border border-bg-border focus:border-amber-DEFAULT rounded px-2 py-1.5 text-text-primary placeholder-text-tertiary outline-none transition-colors"
+              className="num text-sm w-24 bg-bg-card border border-bg-border focus:border-cyan-DEFAULT/60 rounded px-2 py-1.5 text-text-primary placeholder-text-tertiary outline-none transition-colors"
             />
             <button
               onClick={handleSend}
               disabled={sending || !newCpc}
-              className="num text-xs font-medium px-4 py-1.5 rounded transition-colors bg-amber-DEFAULT text-bg-base hover:opacity-90 disabled:opacity-40 disabled:cursor-not-allowed"
+              className="num text-xs font-medium px-4 py-1.5 rounded transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+              style={{ background: 'rgba(0,212,255,0.15)', border: '1px solid rgba(0,212,255,0.3)', color: '#00D4FF' }}
             >
               {sending ? 'Enviando...' : 'Enviar a Google Ads'}
             </button>
@@ -221,7 +242,7 @@ export function CampaignTable({ metrics, customerId, onRefresh, onSelectCampaign
             value={search}
             onChange={e => setSearch(e.target.value)}
             placeholder="Buscar campaña..."
-            className="w-full pl-8 pr-3 py-2 text-sm bg-[#111] border border-[#222] focus:border-[#444] rounded-lg text-white placeholder-[#444] outline-none transition-colors"
+            className="w-full pl-8 pr-3 py-2 text-xs num bg-bg-card border border-bg-border focus:border-cyan-DEFAULT/40 rounded text-white placeholder-text-tertiary outline-none transition-colors"
           />
           {search && (
             <button
@@ -230,11 +251,9 @@ export function CampaignTable({ metrics, customerId, onRefresh, onSelectCampaign
             >✕</button>
           )}
         </div>
-        {search && (
-          <span className="text-xs text-[#555]">
-            {filtered.length} de {sorted.length} campañas
-          </span>
-        )}
+        <span className="num text-[10px] text-text-tertiary tracking-wider">
+          {search ? `${filtered.length} / ${sorted.length}` : `${sorted.length} CAMPAIGNS`}
+        </span>
       </div>
 
       {/* ── Tabla ────────────────────────────────────────────── */}
@@ -255,7 +274,7 @@ export function CampaignTable({ metrics, customerId, onRefresh, onSelectCampaign
                   checked={allChecked}
                   ref={el => { if (el) el.indeterminate = someChecked }}
                   onChange={toggleAll}
-                  className="accent-amber-DEFAULT cursor-pointer"
+                  className="accent-cyan-DEFAULT cursor-pointer"
                 />
               </th>
 
@@ -315,7 +334,7 @@ export function CampaignTable({ metrics, customerId, onRefresh, onSelectCampaign
                   onClick={() => onSelectCampaign?.(m)}
                   className={clsx(
                     'cursor-pointer transition-colors',
-                    isSelected ? 'bg-amber-DEFAULT/5 hover:bg-amber-DEFAULT/8' : 'hover:bg-[#111]'
+                    isSelected ? 'bg-cyan-DEFAULT/5 hover:bg-cyan-DEFAULT/8' : 'hover:bg-[#111]'
                   )}
                 >
                   {/* Checkbox */}
@@ -324,7 +343,7 @@ export function CampaignTable({ metrics, customerId, onRefresh, onSelectCampaign
                       type="checkbox"
                       checked={isSelected}
                       onChange={() => toggleOne(m.campaignId)}
-                      className="accent-amber-DEFAULT cursor-pointer"
+                      className="accent-cyan-DEFAULT cursor-pointer"
                     />
                   </td>
 
@@ -378,8 +397,15 @@ export function CampaignTable({ metrics, customerId, onRefresh, onSelectCampaign
                   </td>
 
                   {/* IS */}
-                  <td className="px-3 py-2.5 border-r border-[#161616] text-right num text-text-secondary">
-                    {pct(m.isActual)}
+                  <td className="px-3 py-2.5 border-r border-[#161616]">
+                    {m.isActual !== null ? (
+                      <div className="flex flex-col items-end gap-1">
+                        <span className="num text-xs text-text-secondary">{Math.round(m.isActual * 100)}%</span>
+                        <div className="progress-bar w-full">
+                          <div className="progress-bar-fill" style={{ width: `${m.isActual * 100}%` }} />
+                        </div>
+                      </div>
+                    ) : <span className="num text-xs text-text-tertiary text-right block">—</span>}
                   </td>
 
                   {/* Top IS */}
@@ -410,8 +436,31 @@ export function CampaignTable({ metrics, customerId, onRefresh, onSelectCampaign
                   </td>
 
                   {/* Estado */}
-                  <td className={clsx('px-3 py-2.5 text-xs whitespace-nowrap overflow-hidden text-ellipsis', LEVEL_COLOR[m.recommendation.level])}>
-                    {m.recommendation.message}
+                  <td className="px-3 py-2.5">
+                    <div className="flex flex-col gap-1">
+                      <span className={clsx(
+                        'num text-[9px] px-1.5 py-0.5 rounded-sm inline-flex items-center gap-1 w-fit tracking-wider uppercase border',
+                        m.recommendation.level === 'ok'      && 'bg-green-dim text-green-DEFAULT border-green-DEFAULT/25',
+                        m.recommendation.level === 'info'    && 'bg-blue-dim text-blue-DEFAULT border-blue-DEFAULT/25',
+                        m.recommendation.level === 'warning' && 'bg-amber-dim text-amber-DEFAULT border-amber-DEFAULT/25',
+                        m.recommendation.level === 'alert'   && 'bg-red-dim text-red-DEFAULT border-red-DEFAULT/25',
+                      )}>
+                        <span className={clsx(
+                          'w-1 h-1 rounded-full inline-block',
+                          m.recommendation.level === 'ok'      && 'bg-green-DEFAULT',
+                          m.recommendation.level === 'info'    && 'bg-blue-DEFAULT',
+                          m.recommendation.level === 'warning' && 'bg-amber-DEFAULT',
+                          m.recommendation.level === 'alert'   && 'bg-red-DEFAULT',
+                        )} />
+                        {m.recommendation.level === 'ok'      && 'ACTIVE'}
+                        {m.recommendation.level === 'info'    && 'INFO'}
+                        {m.recommendation.level === 'warning' && 'AVISO'}
+                        {m.recommendation.level === 'alert'   && 'ALERTA'}
+                      </span>
+                      <span className={clsx('text-[10px] leading-tight', LEVEL_COLOR[m.recommendation.level])}>
+                        {m.recommendation.message}
+                      </span>
+                    </div>
                   </td>
                 </tr>
               )

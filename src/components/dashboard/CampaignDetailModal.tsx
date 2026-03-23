@@ -25,7 +25,8 @@ const SCENARIO_LABEL: Record<ExpertRecommendation['scenario'], string> = {
   raise_constrained:     'Subir — techo saturado',
   lower_underperforming: 'Bajar — ROAS por debajo del objetivo',
   hold_no_ceiling:       'Sin techo — propuesta inicial',
-  hold_stable:           'Mantener — situación equilibrada',
+  hold_stable:            'Mantener — situación equilibrada',
+  hold_budget_bottleneck: 'Mantener — cuello de botella es el presupuesto',
 }
 
 const CONFIDENCE_STYLE: Record<ExpertRecommendation['confidence'], string> = {

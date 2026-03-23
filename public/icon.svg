@@ -1,0 +1,25 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" fill="none">
+  <!-- Background rounded square -->
+  <rect width="512" height="512" rx="96" fill="#1a1a1a"/>
+
+  <!-- Monitor frame (cyan) -->
+  <rect x="72" y="88" width="368" height="268" rx="18" stroke="#00D4FF" stroke-width="20" fill="#111"/>
+  <!-- Monitor stand neck -->
+  <rect x="226" y="356" width="60" height="52" fill="#00D4FF" rx="4"/>
+  <!-- Monitor stand base -->
+  <rect x="166" y="402" width="180" height="28" rx="10" fill="#00D4FF"/>
+
+  <!-- Bar chart bars (cyan) -->
+  <rect x="124" y="248" width="52" height="88" rx="6" fill="#00D4FF"/>
+  <rect x="196" y="208" width="52" height="128" rx="6" fill="#00D4FF"/>
+  <rect x="268" y="168" width="52" height="168" rx="6" fill="#00D4FF"/>
+  <rect x="340" y="208" width="52" height="128" rx="6" fill="#00D4FF"/>
+
+  <!-- CPC ceiling line (amber/yellow) -->
+  <rect x="100" y="222" width="312" height="14" rx="7" fill="#F59E0B"/>
+
+  <!-- Warning triangle (amber) -->
+  <path d="M148 82 L200 172 H96 Z" fill="#F59E0B"/>
+  <rect x="140" y="108" width="16" height="38" rx="4" fill="#1a1a1a"/>
+  <rect x="140" y="152" width="16" height="14" rx="4" fill="#1a1a1a"/>
+</svg>

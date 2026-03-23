@@ -17,11 +17,12 @@ interface Props {
 type DatePreset = '7days' | '30days' | '90days'
 
 const SCENARIO_LABEL: Record<ExpertRecommendation['scenario'], string> = {
-  raise_losing_traffic:  'Subir — tráfico rentable perdido',
-  raise_constrained:     'Subir — techo saturado',
-  lower_underperforming: 'Bajar — ROAS por debajo del objetivo',
-  hold_no_ceiling:       'Sin techo — propuesta inicial',
-  hold_stable:           'Mantener — situación equilibrada',
+  raise_losing_traffic:    'Subir — tráfico rentable perdido',
+  raise_constrained:       'Subir — techo saturado',
+  lower_underperforming:   'Bajar — ROAS por debajo del objetivo',
+  hold_no_ceiling:         'Sin techo — propuesta inicial',
+  hold_stable:             'Mantener — situación equilibrada',
+  hold_budget_bottleneck:  'Mantener — cuello de botella es el presupuesto',
 }
 
 const CONFIDENCE_STYLE: Record<ExpertRecommendation['confidence'], string> = {
@@ -97,7 +98,7 @@ export function CampaignDetailView({ campaign: m, customerId, onBack }: Props) {
 
   const fetchAll = useCallback(async (preset: DatePreset) => {
     const range  = getRange(preset)
-    const params = new URLSearchParams({ customerId, startDate: range.start, endDate: range.end })
+    const params = new URLSearchParams({ customerId: customerId.replace(/-/g, ''), startDate: range.start, endDate: range.end })
 
     setHistoryLoading(true); setHistoryError(null)
     fetch(`/api/campaigns/history?campaignName=${encodeURIComponent(m.campaignName)}&days=${range.days}`)
@@ -109,14 +110,14 @@ export function CampaignDetailView({ campaign: m, customerId, onBack }: Props) {
     setDistLoading(true); setDistError(null)
     fetch(`/api/campaigns/${m.campaignId}/cpc-distribution?${params}`)
       .then(r => r.json())
-      .then(d => setDist(d))
+      .then(d => { if (d.error) throw new Error(d.error); setDist(d) })
       .catch(e => setDistError(e.message))
       .finally(() => setDistLoading(false))
 
     setExpertLoading(true); setExpertError(null); setApplied(false)
     fetch(`/api/campaigns/${m.campaignId}/expert-recommendation?${params}`)
       .then(r => r.json())
-      .then(d => setExpert(d.recommendation))
+      .then(d => { if (d.error) throw new Error(d.error); setExpert(d.recommendation) })
       .catch(e => setExpertError(e.message))
       .finally(() => setExpertLoading(false))
   }, [m.campaignId, m.campaignName, customerId])

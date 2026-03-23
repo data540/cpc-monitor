@@ -66,7 +66,7 @@ export interface ExpertRecommendation {
   delta:            number
   deltaPercent:     number | null
   confidence:       'high' | 'medium' | 'low'
-  scenario:         'raise_constrained' | 'raise_losing_traffic' | 'lower_underperforming' | 'hold_no_ceiling' | 'hold_stable'
+  scenario:         'raise_constrained' | 'raise_losing_traffic' | 'lower_underperforming' | 'hold_no_ceiling' | 'hold_stable' | 'hold_budget_bottleneck'
   reasoning:        string[]
 }
 
