@@ -57,6 +57,17 @@ export interface GoogleAdsCampaignRow {
   'metrics.conversions':                            string
 }
 
+// Recomendación experta de techo CPC
+export interface ExpertRecommendation {
+  suggestedCeiling: number
+  currentCeiling:   number | null
+  delta:            number
+  deltaPercent:     number | null
+  confidence:       'high' | 'medium' | 'low'
+  scenario:         'raise_constrained' | 'raise_losing_traffic' | 'lower_underperforming' | 'hold_no_ceiling' | 'hold_stable'
+  reasoning:        string[]
+}
+
 // Distribución de CPC por hora para una campaña
 export interface CpcDistributionData {
   campaignId: string

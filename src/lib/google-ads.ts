@@ -392,7 +392,7 @@ export async function getCpcDistribution(
     campaignId,
     campaignName,
     temporalMode,
-    period: dateRange,
+    period: { startDate: dateRange.start, endDate: dateRange.end },
     stats: {
       ...stats,
       totalClicks: Object.values(slotMap).reduce((sum, d) => sum + d.clicks, 0),

@@ -4,33 +4,30 @@ import { useState, useEffect, useCallback } from 'react'
 import { signOut } from 'next-auth/react'
 import { CampaignCard } from './CampaignCard'
 import { CampaignTable } from './CampaignTable'
-import { CampaignDetailModal } from './CampaignDetailModal'
+import { CampaignDetailView } from './CampaignDetailView'
 import { CampaignMetrics } from '@/types'
 
 interface Props {
   user: { id: string; name?: string; email?: string; image?: string }
 }
 
-// Customer ID de la cuenta — en producción esto vendría de un selector
-// Por ahora se lee del env o se puede cambiar aquí
 const DEFAULT_CUSTOMER_ID = process.env.NEXT_PUBLIC_GOOGLE_ADS_CUSTOMER_ID ?? ''
 
 export function DashboardClient({ user }: Props) {
-  const [metrics, setMetrics]           = useState<CampaignMetrics[]>([])
-  const [loading, setLoading]           = useState(true)
-  const [error, setError]               = useState<string | null>(null)
-  const [lastUpdate, setLastUpdate]     = useState<Date | null>(null)
-  const [customerId, setCustomerId]     = useState(DEFAULT_CUSTOMER_ID)
-  const [inputId, setInputId]           = useState(DEFAULT_CUSTOMER_ID)
-  const [view, setView]                 = useState<'cards' | 'table'>('table')
+  const [metrics,          setMetrics]          = useState<CampaignMetrics[]>([])
+  const [loading,          setLoading]          = useState(true)
+  const [error,            setError]            = useState<string | null>(null)
+  const [lastUpdate,       setLastUpdate]       = useState<Date | null>(null)
+  const [customerId,       setCustomerId]       = useState(DEFAULT_CUSTOMER_ID)
+  const [inputId,          setInputId]          = useState(DEFAULT_CUSTOMER_ID)
+  const [view,             setView]             = useState<'cards' | 'table'>('table')
   const [selectedCampaign, setSelectedCampaign] = useState<CampaignMetrics | null>(null)
 
   const fetchMetrics = useCallback(async (cid: string) => {
     if (!cid) return
-    setLoading(true)
-    setError(null)
+    setLoading(true); setError(null)
     try {
-      const res = await fetch(`/api/campaigns?customerId=${cid.replace(/-/g, '')}`)
+      const res  = await fetch(`/api/campaigns?customerId=${cid.replace(/-/g, '')}`)
       const data = await res.json()
       if (!res.ok) throw new Error(data.error ?? 'Error desconocido')
       setMetrics(data.metrics)
@@ -42,19 +39,26 @@ export function DashboardClient({ user }: Props) {
     }
   }, [])
 
-  useEffect(() => {
-    if (customerId) fetchMetrics(customerId)
-  }, [customerId, fetchMetrics])
+  useEffect(() => { if (customerId) fetchMetrics(customerId) }, [customerId, fetchMetrics])
 
   // Auto-refresh cada 6 horas
   useEffect(() => {
-    const interval = setInterval(() => {
-      if (customerId) fetchMetrics(customerId)
-    }, 6 * 60 * 60 * 1000)
+    const interval = setInterval(() => { if (customerId) fetchMetrics(customerId) }, 6 * 60 * 60 * 1000)
     return () => clearInterval(interval)
   }, [customerId, fetchMetrics])
 
   const alertCount = metrics.filter(m => m.recommendation.level === 'alert').length
+
+  // ── Vista de detalle ──────────────────────────────────────────
+  if (selectedCampaign) {
+    return (
+      <CampaignDetailView
+        campaign={selectedCampaign}
+        customerId={customerId}
+        onBack={() => setSelectedCampaign(null)}
+      />
+    )
+  }
 
   return (
     <div className="min-h-screen bg-bg-base">
@@ -64,9 +68,7 @@ export function DashboardClient({ user }: Props) {
         <div className="max-w-6xl mx-auto px-6 py-4 flex items-center justify-between">
           <div className="flex items-center gap-3">
             <div className="w-2 h-2 rounded-full bg-amber-DEFAULT" />
-            <span className="num text-sm font-medium tracking-wider text-text-primary uppercase">
-              CPC Monitor
-            </span>
+            <span className="num text-sm font-medium tracking-wider text-text-primary uppercase">CPC Monitor</span>
             {alertCount > 0 && (
               <span className="num text-xs bg-red-dim text-red-DEFAULT border border-red-DEFAULT/30 px-2 py-0.5 rounded-sm">
                 {alertCount} alerta{alertCount > 1 ? 's' : ''}
@@ -80,25 +82,20 @@ export function DashboardClient({ user }: Props) {
                 Actualizado {lastUpdate.toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit' })}
               </span>
             )}
-
-            {/* Toggle vista */}
             <div className="flex border border-bg-border rounded overflow-hidden">
               <button
                 onClick={() => setView('table')}
                 className={`num text-xs px-3 py-1.5 transition-colors ${view === 'table' ? 'bg-bg-hover text-text-primary' : 'text-text-tertiary hover:text-text-secondary'}`}
-                title="Vista lista"
               >
                 ☰ Lista
               </button>
               <button
                 onClick={() => setView('cards')}
                 className={`num text-xs px-3 py-1.5 border-l border-bg-border transition-colors ${view === 'cards' ? 'bg-bg-hover text-text-primary' : 'text-text-tertiary hover:text-text-secondary'}`}
-                title="Vista tarjetas"
               >
                 ⊞ Cards
               </button>
             </div>
-
             <button
               onClick={() => fetchMetrics(customerId)}
               disabled={loading}
@@ -144,7 +141,6 @@ export function DashboardClient({ user }: Props) {
           </button>
         </div>
 
-        {/* Estados */}
         {error && (
           <div className="mb-6 bg-red-dim border border-red-DEFAULT/30 rounded-md px-4 py-3 text-sm text-red-DEFAULT">
             <span className="font-medium">Error: </span>{error}
@@ -166,20 +162,13 @@ export function DashboardClient({ user }: Props) {
           </div>
         )}
 
-        {/* Grid de campañas */}
         {!loading && metrics.length > 0 && (
           <>
             {/* Resumen superior */}
             <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-8">
-              <SummaryCard label="Campañas" value={metrics.length.toString()} />
-              <SummaryCard
-                label="Clics totales"
-                value={metrics.reduce((a, m) => a + m.clicks, 0).toLocaleString('es-ES')}
-              />
-              <SummaryCard
-                label="Coste total"
-                value={`${metrics.reduce((a, m) => a + m.costEur, 0).toFixed(2)} €`}
-              />
+              <SummaryCard label="Campañas"    value={metrics.length.toString()} />
+              <SummaryCard label="Clics totales" value={metrics.reduce((a, m) => a + m.clicks, 0).toLocaleString('es-ES')} />
+              <SummaryCard label="Coste total"  value={`${metrics.reduce((a, m) => a + m.costEur, 0).toFixed(2)} €`} />
               <SummaryCard
                 label="IS media"
                 value={`${Math.round(metrics.reduce((a, m) => a + (m.isActual ?? 0), 0) / metrics.filter(m => m.isActual !== null).length * 100)}%`}
@@ -205,13 +194,6 @@ export function DashboardClient({ user }: Props) {
           </>
         )}
       </main>
-
-      {/* Modal de detalle */}
-      <CampaignDetailModal
-        campaign={selectedCampaign}
-        customerId={customerId}
-        onClose={() => setSelectedCampaign(null)}
-      />
     </div>
   )
 }
