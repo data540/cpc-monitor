@@ -139,8 +139,21 @@ export async function GET(
       console.warn('[expert-recommendation] No se pudo obtener distribución:', e)
     }
 
+    // ── IS threshold: desde config o auto-detect por nombre ───────
+    const cpcConfig = await prisma.cpcConfig.findFirst({
+      where: { userId, campaignName: snapshot.campaignName },
+    })
+
+    let isThreshold: number | null = cpcConfig?.isThreshold ?? null
+    if (isThreshold === null) {
+      const nameLower = snapshot.campaignName.toLowerCase()
+      if (nameLower.includes('marca') || nameLower.includes('brand')) {
+        isThreshold = 0.85
+      }
+    }
+
     // ── Calcular recomendación ────────────────────────────────────
-    const recommendation = computeOptimalCeiling({ metrics, distribution, trend })
+    const recommendation = computeOptimalCeiling({ metrics, distribution, trend, isThreshold })
 
     return Response.json({
       recommendation,

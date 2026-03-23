@@ -2,7 +2,7 @@
 
 import { useEffect, useState, useCallback } from 'react'
 import {
-  LineChart, Line, BarChart, Bar,
+  LineChart, Line, BarChart, Bar, AreaChart, Area, ReferenceLine,
   XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer,
 } from 'recharts'
 import { CampaignMetrics, CpcDistributionData, ExpertRecommendation, HistoryPoint } from '@/types'
@@ -23,6 +23,7 @@ const SCENARIO_LABEL: Record<ExpertRecommendation['scenario'], string> = {
   hold_no_ceiling:         'Sin techo — propuesta inicial',
   hold_stable:             'Mantener — situación equilibrada',
   hold_budget_bottleneck:  'Mantener — cuello de botella es el presupuesto',
+  is_below_threshold:      '⚠ Alerta — IS por debajo del umbral',
 }
 
 const CONFIDENCE_STYLE: Record<ExpertRecommendation['confidence'], string> = {
@@ -146,7 +147,13 @@ export function CampaignDetailView({ campaign: m, customerId, onBack }: Props) {
     }
   }
 
-  const isRaise = expert?.scenario.startsWith('raise')
+  const isThreshold = (() => {
+    const nameLower = m.campaignName.toLowerCase()
+    if (nameLower.includes('marca') || nameLower.includes('brand')) return 0.85
+    return null
+  })()
+
+  const isRaise = expert?.scenario.startsWith('raise') || expert?.scenario === 'is_below_threshold'
   const isLower = expert?.scenario.startsWith('lower')
 
   return (
@@ -261,6 +268,95 @@ export function CampaignDetailView({ campaign: m, customerId, onBack }: Props) {
                 </LineChart>
               </ResponsiveContainer>
             )}
+          </div>
+        </section>
+
+        {/* ── Sección IS: Evolución Impression Share ─────────────── */}
+        <section>
+          <div className="flex items-center justify-between mb-3">
+            <SectionTitle>Evolución Impression Share</SectionTitle>
+            {isThreshold !== null && (
+              <span className={clsx(
+                'text-xs px-2 py-0.5 rounded border font-mono',
+                m.isActual !== null && m.isActual < isThreshold
+                  ? 'text-red-400 border-red-700/50 bg-red-900/20'
+                  : 'text-green-400 border-green-700/50 bg-green-900/20'
+              )}>
+                {m.isActual !== null && m.isActual < isThreshold ? '⚠ ' : '✓ '}
+                Objetivo: {Math.round(isThreshold * 100)}%
+              </span>
+            )}
+          </div>
+          <div className="bg-[#0f0f0f] border border-[#1e1e1e] rounded-lg p-4">
+            {historyLoading ? (
+              <div className="h-48 flex items-center justify-center text-[#555] text-sm animate-pulse">Cargando IS…</div>
+            ) : history.length === 0 ? (
+              <div className="h-48 flex items-center justify-center text-[#555] text-sm">Sin datos históricos de IS</div>
+            ) : (
+              <ResponsiveContainer width="100%" height={220}>
+                <AreaChart data={history.map(h => ({
+                  label: new Date(h.capturedAt).toLocaleDateString('es-ES', { month: 'short', day: 'numeric' }),
+                  is: h.isActual !== null ? Math.round(h.isActual * 100) : null,
+                }))}>
+                  <defs>
+                    <linearGradient id="isGradient" x1="0" y1="0" x2="0" y2="1">
+                      <stop offset="5%" stopColor="#00D4FF" stopOpacity={0.3}/>
+                      <stop offset="95%" stopColor="#00D4FF" stopOpacity={0.02}/>
+                    </linearGradient>
+                  </defs>
+                  <CartesianGrid strokeDasharray="3 3" stroke="#1a1a1a" />
+                  <XAxis dataKey="label" stroke="#444" tick={{ fontSize: 11 }} interval="preserveStartEnd" />
+                  <YAxis stroke="#444" tick={{ fontSize: 11 }} domain={[0, 100]} tickFormatter={v => `${v}%`} />
+                  <Tooltip
+                    contentStyle={{ backgroundColor: '#161616', border: '1px solid #2a2a2a' }}
+                    formatter={(v: any) => [`${v}%`, 'Impression Share']}
+                  />
+                  {isThreshold !== null && (
+                    <ReferenceLine
+                      y={Math.round(isThreshold * 100)}
+                      stroke="#ef4444"
+                      strokeDasharray="4 2"
+                      strokeWidth={1.5}
+                      label={{ value: `Mín ${Math.round(isThreshold * 100)}%`, position: 'right', fill: '#ef4444', fontSize: 11 }}
+                    />
+                  )}
+                  <Area
+                    type="monotone"
+                    dataKey="is"
+                    stroke="#00D4FF"
+                    fill="url(#isGradient)"
+                    strokeWidth={2}
+                    dot={false}
+                    name="IS"
+                    connectNulls
+                  />
+                </AreaChart>
+              </ResponsiveContainer>
+            )}
+            {/* IS stats below the chart */}
+            {history.length > 0 && (() => {
+              const isValues = history.map(h => h.isActual).filter((v): v is number => v !== null)
+              if (isValues.length === 0) return null
+              const avg = Math.round((isValues.reduce((a, b) => a + b, 0) / isValues.length) * 100)
+              const min = Math.round(Math.min(...isValues) * 100)
+              const max = Math.round(Math.max(...isValues) * 100)
+              const current = m.isActual !== null ? Math.round(m.isActual * 100) : null
+              return (
+                <div className="grid grid-cols-4 gap-2 mt-3">
+                  {[
+                    ['Actual', current !== null ? `${current}%` : '—'],
+                    ['Promedio', `${avg}%`],
+                    ['Mínimo', `${min}%`],
+                    ['Máximo', `${max}%`],
+                  ].map(([l, v]) => (
+                    <div key={l} className="bg-[#141414] border border-[#1e1e1e] rounded p-2 text-center">
+                      <p className="text-[10px] text-[#555] mb-0.5">{l}</p>
+                      <p className="text-xs text-white font-mono">{v}</p>
+                    </div>
+                  ))}
+                </div>
+              )
+            })()}
           </div>
         </section>
 

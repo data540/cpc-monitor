@@ -27,6 +27,7 @@ const SCENARIO_LABEL: Record<ExpertRecommendation['scenario'], string> = {
   hold_no_ceiling:       'Sin techo — propuesta inicial',
   hold_stable:            'Mantener — situación equilibrada',
   hold_budget_bottleneck: 'Mantener — cuello de botella es el presupuesto',
+  is_below_threshold:    '⚠ Alerta — IS por debajo del umbral',
 }
 
 const CONFIDENCE_STYLE: Record<ExpertRecommendation['confidence'], string> = {

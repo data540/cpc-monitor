@@ -69,9 +69,14 @@ async function loadPortfolioCeilings(
     WHERE bidding_strategy.type = 'TARGET_ROAS'
   `
 
+  // Las estrategias de cartera pertenecen al MCC, no a la cuenta hija.
+  // Consultamos desde el MCC para obtener los techos CPC reales.
+  // Si no hay MCC configurado, fallback a la cuenta hija.
+  const queryAccount = opts.mccCustomerId ?? opts.customerId
+
   try {
     const res = await fetch(
-      `${ADS_API_BASE}/customers/${opts.customerId}/googleAds:search`,
+      `${ADS_API_BASE}/customers/${queryAccount}/googleAds:search`,
       {
         method: 'POST',
         headers: buildHeaders(opts),
@@ -80,7 +85,8 @@ async function loadPortfolioCeilings(
     )
 
     if (!res.ok) {
-      console.warn('[google-ads] No se pudieron leer estrategias de cartera:', res.status)
+      const errText = await res.text()
+      console.warn('[google-ads] No se pudieron leer estrategias de cartera:', res.status, errText)
       return {}
     }
 
@@ -91,15 +97,17 @@ async function loadPortfolioCeilings(
       const rn      = row.biddingStrategy?.resourceName
       const micros  = Number(row.biddingStrategy?.targetRoas?.cpcBidCeilingMicros ?? 0)
       const troas   = Number(row.biddingStrategy?.targetRoas?.targetRoas ?? 0)
-      if (rn) {
+      if (rn && micros > 0) {
         ceilings[rn] = {
           name:       row.biddingStrategy?.name ?? rn,
           cpcCeiling: Math.round(micros / 1e4) / 100,
           targetRoas: troas,
         }
+        console.log(`[google-ads] Estrategia cartera: ${row.biddingStrategy?.name} → techo €${Math.round(micros / 1e4) / 100}`)
       }
     }
 
+    console.log(`[google-ads] ${Object.keys(ceilings).length} estrategias de cartera cargadas desde cuenta ${queryAccount}`)
     return ceilings
   } catch (e) {
     console.error('[google-ads] Error cargando carteras:', e)

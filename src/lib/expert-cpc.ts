@@ -16,6 +16,7 @@ export interface ExpertRecommendation {
                   | 'hold_no_ceiling'
                   | 'hold_stable'
                   | 'hold_budget_bottleneck'
+                  | 'is_below_threshold'
   reasoning:        string[]
 }
 
@@ -23,6 +24,7 @@ interface EngineInput {
   metrics:      CampaignMetrics
   distribution: CpcDistributionData | null
   trend:        TrendData | null
+  isThreshold:  number | null
 }
 
 // ── Umbrales ──────────────────────────────────────────────────
@@ -38,7 +40,7 @@ const MIN_CLICKS_MEDIUM_CONFIDENCE = 50
 // ── Función principal ─────────────────────────────────────────
 
 export function computeOptimalCeiling(input: EngineInput): ExpertRecommendation {
-  const { metrics: m, distribution: dist, trend } = input
+  const { metrics: m, distribution: dist, trend, isThreshold } = input
   const reasoning: string[] = []
 
   // ── Señales derivadas ─────────────────────────────────────────
@@ -126,12 +128,65 @@ export function computeOptimalCeiling(input: EngineInput): ExpertRecommendation 
   // Ancla estadística: p90 si hay distribución, avgCpc si no
   const anchor = dist ? dist.stats.p90 : m.avgCpc
 
-  // ── Bloque 1: bajo rendimiento ────────────────────────────────
+  // ── Bloques de escenarios ─────────────────────────────────────
 
   let suggested: number
   let scenario:  ExpertRecommendation['scenario']
 
-  if (underperforming) {
+  // ── Bloque IS threshold: IS por debajo del umbral objetivo ────
+  // Se comprueba ANTES que underperforming y overperforming
+  // Solo se activa si hay umbral configurado y la IS está por debajo
+
+  if (isThreshold !== null && isThreshold > 0 && m.isActual !== null && m.isActual < isThreshold) {
+    scenario = 'is_below_threshold'
+    const isPct = Math.round(m.isActual * 100)
+    const thresholdPct = Math.round(isThreshold * 100)
+    const gap = thresholdPct - isPct
+
+    reasoning.push(
+      `⚠ ALERTA IS: Impression Share del ${isPct}% — ${gap} puntos por debajo del umbral objetivo del ${thresholdPct}%.`
+    )
+
+    if (m.isLostBudget !== null && m.isLostRank !== null && totalIsLost > 0.01) {
+      const budgetLostPct = Math.round(m.isLostBudget * 100)
+      const rankLostPct = Math.round(m.isLostRank * 100)
+      if (rankIsDominantBottleneck) {
+        reasoning.push(
+          `La pérdida de IS es principalmente por ranking de puja: ${rankLostPct}% por ranking vs ${budgetLostPct}% por presupuesto. ` +
+          `El techo CPC está limitando la cobertura en subastas competidas.`
+        )
+        const multiplier = Math.min(efficiencyRatio ?? 1.15, 1.25)
+        suggested = round2(anchor * multiplier)
+        reasoning.push(
+          `Se recomienda subir el techo de €${f2(m.cpcCeiling)} a €${f2(suggested)} para recuperar IS y alcanzar el umbral objetivo del ${thresholdPct}%.`
+        )
+      } else {
+        reasoning.push(
+          `La pérdida de IS es principalmente por presupuesto: ${budgetLostPct}% por presupuesto vs ${rankLostPct}% por ranking. ` +
+          `Subir el techo CPC no recuperará estas impresiones.`
+        )
+        suggested = round2(m.cpcCeiling)
+        reasoning.push(
+          `Recomendación: mantener el techo CPC actual (€${f2(m.cpcCeiling)}) y aumentar el presupuesto diario para recuperar IS hasta el ${thresholdPct}%.`
+        )
+      }
+    } else {
+      suggested = round2(m.cpcCeiling * 1.10)
+      reasoning.push(
+        `Sin datos de descomposición IS, se propone subir el techo un 10% a €${f2(suggested)} como medida para mejorar el ranking en subastas.`
+      )
+    }
+
+    if (lostImpressions) {
+      reasoning.push(
+        `Se estiman ~${lostImpressions.toLocaleString('es-ES')} impresiones perdidas diariamente. ` +
+        `Recuperar el umbral del ${thresholdPct}% requeriría capturar aproximadamente ${Math.round(lostImpressions * (gap / 100)).toLocaleString('es-ES')} impresiones adicionales.`
+      )
+    }
+
+  // ── Bloque 1: bajo rendimiento ────────────────────────────────
+
+  } else if (underperforming) {
     scenario = 'lower_underperforming'
     const base = dist ? Math.max(dist.stats.medianCpc, m.avgCpc * 0.92) : m.avgCpc * 0.92
     suggested  = round2(base)

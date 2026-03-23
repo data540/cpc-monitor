@@ -30,6 +30,7 @@ export interface Recommendation {
 export interface CpcConfig {
   campaignName: string
   cpcCeiling:   number
+  isThreshold?: number | null
 }
 
 export interface HistoryPoint {
@@ -66,7 +67,7 @@ export interface ExpertRecommendation {
   delta:            number
   deltaPercent:     number | null
   confidence:       'high' | 'medium' | 'low'
-  scenario:         'raise_constrained' | 'raise_losing_traffic' | 'lower_underperforming' | 'hold_no_ceiling' | 'hold_stable' | 'hold_budget_bottleneck'
+  scenario:         'raise_constrained' | 'raise_losing_traffic' | 'lower_underperforming' | 'hold_no_ceiling' | 'hold_stable' | 'hold_budget_bottleneck' | 'is_below_threshold'
   reasoning:        string[]
 }
 

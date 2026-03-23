@@ -100,6 +100,7 @@ model CpcConfig {
   userId       String
   campaignName String   // nombre exacto de la campaña
   cpcCeiling   Float    // EUR
+  isThreshold  Float?   // IS mínimo objetivo 0-1 (ej: 0.85 para campañas de Marca)
   updatedAt    DateTime @updatedAt
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
