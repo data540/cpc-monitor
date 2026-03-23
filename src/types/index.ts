@@ -56,3 +56,36 @@ export interface GoogleAdsCampaignRow {
   'metrics.conversions_value':                      string
   'metrics.conversions':                            string
 }
+
+// Distribución de CPC por hora para una campaña
+export interface CpcDistributionData {
+  campaignId: string
+  campaignName: string
+  period: { startDate: string; endDate: string }
+  temporalMode: 'hourly' | 'weekly'   // 'hourly' = 24h, 'weekly' = 7 días
+  stats: {
+    minCpc: number
+    maxCpc: number
+    avgCpc: number
+    medianCpc: number
+    p10: number
+    p25: number
+    p75: number
+    p90: number
+    stdDev: number
+    totalClicks: number
+  }
+  hourlyData: Array<{
+    hour: number
+    label: string     // '0:00'–'23:00' en modo horario, 'Lun'–'Dom' en modo semanal
+    avgCpc: number
+    clicks: number
+    cost: number
+  }>
+  distribution: Array<{
+    priceRangeMin: number
+    priceRangeMax: number
+    clickCount: number
+    percentage: number
+  }>
+}

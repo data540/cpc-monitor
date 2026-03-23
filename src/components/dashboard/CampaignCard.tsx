@@ -7,6 +7,7 @@ import { MetricGauge } from './MetricGauge'
 
 interface Props {
   metrics: CampaignMetrics
+  onSelect?: (metrics: CampaignMetrics) => void
 }
 
 const LEVEL_STYLES = {
@@ -16,14 +17,17 @@ const LEVEL_STYLES = {
   alert:   { border: 'border-red-DEFAULT/50',       badge: 'bg-red-dim text-red-DEFAULT border-red-DEFAULT/30',        dot: 'bg-red-DEFAULT'   },
 }
 
-export function CampaignCard({ metrics: m }: Props) {
+export function CampaignCard({ metrics: m, onSelect }: Props) {
   const [showHistory, setShowHistory] = useState(false)
   const style = LEVEL_STYLES[m.recommendation.level]
 
   return (
-    <div className={`
+    <div
+      onClick={() => onSelect?.(m)}
+      className={`
       bg-bg-card border rounded-lg overflow-hidden
-      transition-all duration-200
+      transition-all duration-200 cursor-pointer
+      hover:border-blue-DEFAULT/50 hover:shadow-lg
       ${style.border}
       ${m.recommendation.level === 'alert' ? 'pulse-alert' : ''}
     `}>

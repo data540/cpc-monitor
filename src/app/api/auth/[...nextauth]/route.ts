@@ -27,8 +27,10 @@ export const authOptions: NextAuthOptions = {
   ],
 
   callbacks: {
+    async redirect({ url, baseUrl }) {
+      return url.startsWith(baseUrl) ? url : baseUrl + '/dashboard'
+    },
     async session({ session, user }) {
-      // Adjuntar el ID del usuario a la sesión para usarlo en API routes
       if (session.user) {
         (session.user as any).id = user.id
       }

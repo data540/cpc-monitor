@@ -4,6 +4,7 @@ import { useState, useEffect, useCallback } from 'react'
 import { signOut } from 'next-auth/react'
 import { CampaignCard } from './CampaignCard'
 import { CampaignTable } from './CampaignTable'
+import { CampaignDetailModal } from './CampaignDetailModal'
 import { CampaignMetrics } from '@/types'
 
 interface Props {
@@ -15,13 +16,14 @@ interface Props {
 const DEFAULT_CUSTOMER_ID = process.env.NEXT_PUBLIC_GOOGLE_ADS_CUSTOMER_ID ?? ''
 
 export function DashboardClient({ user }: Props) {
-  const [metrics, setMetrics]       = useState<CampaignMetrics[]>([])
-  const [loading, setLoading]       = useState(true)
-  const [error, setError]           = useState<string | null>(null)
-  const [lastUpdate, setLastUpdate] = useState<Date | null>(null)
-  const [customerId, setCustomerId] = useState(DEFAULT_CUSTOMER_ID)
-  const [inputId, setInputId]       = useState(DEFAULT_CUSTOMER_ID)
-  const [view, setView]             = useState<'cards' | 'table'>('table')
+  const [metrics, setMetrics]           = useState<CampaignMetrics[]>([])
+  const [loading, setLoading]           = useState(true)
+  const [error, setError]               = useState<string | null>(null)
+  const [lastUpdate, setLastUpdate]     = useState<Date | null>(null)
+  const [customerId, setCustomerId]     = useState(DEFAULT_CUSTOMER_ID)
+  const [inputId, setInputId]           = useState(DEFAULT_CUSTOMER_ID)
+  const [view, setView]                 = useState<'cards' | 'table'>('table')
+  const [selectedCampaign, setSelectedCampaign] = useState<CampaignMetrics | null>(null)
 
   const fetchMetrics = useCallback(async (cid: string) => {
     if (!cid) return
@@ -189,12 +191,13 @@ export function DashboardClient({ user }: Props) {
                 metrics={metrics}
                 customerId={customerId}
                 onRefresh={() => fetchMetrics(customerId)}
+                onSelectCampaign={setSelectedCampaign}
               />
             ) : (
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 {metrics.map((m, i) => (
                   <div key={m.campaignId} className="fade-up" style={{ animationDelay: `${i * 60}ms` }}>
-                    <CampaignCard metrics={m} />
+                    <CampaignCard metrics={m} onSelect={setSelectedCampaign} />
                   </div>
                 ))}
               </div>
@@ -202,6 +205,13 @@ export function DashboardClient({ user }: Props) {
           </>
         )}
       </main>
+
+      {/* Modal de detalle */}
+      <CampaignDetailModal
+        campaign={selectedCampaign}
+        customerId={customerId}
+        onClose={() => setSelectedCampaign(null)}
+      />
     </div>
   )
 }

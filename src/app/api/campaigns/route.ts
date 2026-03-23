@@ -4,6 +4,7 @@ import { authOptions } from '@/app/api/auth/[...nextauth]/route'
 import { prisma } from '@/lib/prisma'
 import { getCampaignMetrics } from '@/lib/google-ads'
 import { MANUAL_CPC_CEILINGS } from '@/lib/manual-ceilings'
+import { getValidAccessToken } from '@/lib/refresh-token'
 
 export async function GET(request: Request) {
   const session = await getServerSession(authOptions)
@@ -19,14 +20,12 @@ export async function GET(request: Request) {
     return NextResponse.json({ error: 'customerId requerido' }, { status: 400 })
   }
 
-  // Obtener access_token del usuario desde la BD
-  const account = await prisma.account.findFirst({
-    where: { userId, provider: 'google' },
-    orderBy: { expires_at: 'desc' },
-  })
-
-  if (!account?.access_token) {
-    return NextResponse.json({ error: 'Token de Google no encontrado. Vuelve a hacer login.' }, { status: 401 })
+  // Obtener access_token válido (refresca si ha caducado)
+  let accessToken: string
+  try {
+    accessToken = await getValidAccessToken(userId)
+  } catch (e: any) {
+    return NextResponse.json({ error: e.message }, { status: 401 })
   }
 
   // Techos manuales: combinar los del archivo con los guardados en BD
@@ -38,7 +37,7 @@ export async function GET(request: Request) {
 
   try {
     const metrics = await getCampaignMetrics({
-      accessToken:    account.access_token,
+      accessToken,
       customerId:     customerId.replace(/-/g, ''),
       mccCustomerId:  process.env.GOOGLE_ADS_MCC_CUSTOMER_ID,
       developerToken: process.env.GOOGLE_ADS_DEVELOPER_TOKEN!,

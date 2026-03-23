@@ -5,9 +5,10 @@ import { CampaignMetrics } from '@/types'
 import clsx from 'clsx'
 
 interface Props {
-  metrics:    CampaignMetrics[]
-  customerId: string
-  onRefresh?: () => void
+  metrics:           CampaignMetrics[]
+  customerId:        string
+  onRefresh?:        () => void
+  onSelectCampaign?: (campaign: CampaignMetrics) => void
 }
 
 type SortKey = keyof Pick<
@@ -34,7 +35,7 @@ function num(v: number | null, decimals = 2) {
   return v !== null ? v.toFixed(decimals) : '—'
 }
 
-export function CampaignTable({ metrics, customerId, onRefresh }: Props) {
+export function CampaignTable({ metrics, customerId, onRefresh, onSelectCampaign }: Props) {
   const [selected, setSelected]     = useState<Set<string>>(new Set())
   const [newCpc, setNewCpc]         = useState('')
   const [sending, setSending]       = useState(false)
@@ -211,6 +212,9 @@ export function CampaignTable({ metrics, customerId, onRefresh }: Props) {
               <Th label="ROAS Obj"    k="targetRoas"   right />
               <Th label="ROAS Real"   k="realRoas"     right />
               <th className="px-3 py-2 text-xs font-medium text-text-tertiary uppercase tracking-wider text-left">
+                Acción
+              </th>
+              <th className="px-3 py-2 text-xs font-medium text-text-tertiary uppercase tracking-wider text-left">
                 Estado
               </th>
             </tr>
@@ -320,6 +324,16 @@ export function CampaignTable({ metrics, customerId, onRefresh }: Props) {
                         {m.realRoas.toFixed(2)}
                       </span>
                     ) : '—'}
+                  </td>
+
+                  {/* Acción */}
+                  <td className="px-3 py-2.5 text-xs" onClick={e => e.stopPropagation()}>
+                    <button
+                      onClick={() => onSelectCampaign?.(m)}
+                      className="num text-xs text-blue-DEFAULT hover:text-blue-DEFAULT/80 transition-colors underline"
+                    >
+                      Ver detalle
+                    </button>
                   </td>
 
                   {/* Estado */}

@@ -2,7 +2,7 @@
 // Toda la lógica de llamadas a la API, portada directamente del script
 // que ya funciona en producción.
 
-import { CampaignMetrics, GoogleAdsCampaignRow } from '@/types'
+import { CampaignMetrics, GoogleAdsCampaignRow, CpcDistributionData } from '@/types'
 import { buildRecommendation } from './recommendations'
 
 // ── Mock data para desarrollo (sin scope adwords) ─────────────
@@ -15,7 +15,7 @@ const MOCK_CAMPAIGNS: CampaignMetrics[] = [
   { campaignId: 'mock-5', campaignName: 'Shopping - Max ROAS',   cpcCeiling: 1.50, avgCpc: 1.49, cpcUsagePct: 99.3,  clicks:  205, impressions:  3100, ctr: 6.61, costEur: 305.5,  isActual: 0.55, topImpressionPct: 0.44, absoluteTopImpressionPct: 0.29, targetRoas: 6.0, realRoas: 4.1,  recommendation: buildRecommendation({ cpcUsagePct: 99.3,  isActual: 0.55, cpcCeiling: 1.50, realRoas: 4.1,  targetRoas: 6.0 }) },
 ]
 
-const ADS_API_BASE = 'https://googleads.googleapis.com/v18'
+const ADS_API_BASE = 'https://googleads.googleapis.com/v23'
 
 interface FetchOptions {
   accessToken:     string
@@ -160,10 +160,6 @@ async function fetchCampaignRows(
 // ── Función principal exportada ───────────────────────────────
 
 export async function getCampaignMetrics(opts: FetchOptions): Promise<CampaignMetrics[]> {
-  if (process.env.NODE_ENV === 'development') {
-    return MOCK_CAMPAIGNS
-  }
-
   const days      = opts.dateRangeDays ?? 30
   const dateRange = buildDateRange(days)
 
@@ -251,4 +247,247 @@ export async function getAccessibleAccounts(opts: Pick<FetchOptions, 'accessToke
   if (!res.ok) return []
   const data = await res.json()
   return (data.resourceNames ?? []).map((rn: string) => rn.replace('customers/', ''))
+}
+
+// ── Distribución de CPC por hora ──────────────────────────────────
+
+// Mapeo de day_of_week de Google Ads → índice 0-6 (0=Dom, 1=Lun ... 6=Sáb)
+const DAY_OF_WEEK_INDEX: Record<string, number> = {
+  SUNDAY: 0, MONDAY: 1, TUESDAY: 2, WEDNESDAY: 3,
+  THURSDAY: 4, FRIDAY: 5, SATURDAY: 6,
+}
+const DAY_OF_WEEK_LABEL = ['Dom', 'Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb']
+
+export async function getCpcDistribution(
+  opts: FetchOptions,
+  campaignId: string,
+  dateRange: { start: string; end: string }
+): Promise<CpcDistributionData> {
+
+  // ── Intento 1: keyword_view con segments.hour_of_day ─────────
+  const hourlyQuery = `
+    SELECT
+      segments.hour_of_day,
+      metrics.average_cpc,
+      metrics.clicks,
+      metrics.cost_micros
+    FROM keyword_view
+    WHERE campaign.id = ${campaignId}
+      AND segments.date BETWEEN '${dateRange.start}' AND '${dateRange.end}'
+      AND metrics.clicks > 0
+  `
+
+  const hourlyRes = await fetch(
+    `${ADS_API_BASE}/customers/${opts.customerId}/googleAds:search`,
+    {
+      method: 'POST',
+      headers: buildHeaders(opts),
+      body: JSON.stringify({ query: hourlyQuery }),
+    }
+  )
+
+  // Detectar si hour_of_day no está soportado → fallback a day_of_week
+  let rows: any[]
+  let temporalMode: 'hourly' | 'weekly' = 'hourly'
+
+  if (!hourlyRes.ok) {
+    const errText = await hourlyRes.text()
+    const isUnrecognized = errText.includes('UNRECOGNIZED_FIELD') ||
+                           errText.includes('hour_of_day')
+    if (!isUnrecognized) {
+      throw new Error(`Google Ads API error ${hourlyRes.status}: ${errText}`)
+    }
+
+    // ── Fallback: campaign con segments.day_of_week ───────────
+    console.warn('[google-ads] hour_of_day no soportado, usando day_of_week')
+    temporalMode = 'weekly'
+
+    const weeklyQuery = `
+      SELECT
+        segments.day_of_week,
+        metrics.average_cpc,
+        metrics.clicks,
+        metrics.cost_micros
+      FROM campaign
+      WHERE campaign.id = ${campaignId}
+        AND segments.date BETWEEN '${dateRange.start}' AND '${dateRange.end}'
+        AND metrics.clicks > 0
+    `
+    const weeklyRes = await fetch(
+      `${ADS_API_BASE}/customers/${opts.customerId}/googleAds:search`,
+      {
+        method: 'POST',
+        headers: buildHeaders(opts),
+        body: JSON.stringify({ query: weeklyQuery }),
+      }
+    )
+    if (!weeklyRes.ok) {
+      const err = await weeklyRes.text()
+      throw new Error(`Google Ads API error ${weeklyRes.status}: ${err}`)
+    }
+    const weeklyData = await weeklyRes.json()
+    rows = weeklyData.results ?? []
+  } else {
+    const hourlyData = await hourlyRes.json()
+    rows = hourlyData.results ?? []
+  }
+
+  // ── Procesar filas según modo ─────────────────────────────────
+  const slotMap: Record<number, { avgCpc: number[]; clicks: number; cost: number }> = {}
+
+  for (const row of rows) {
+    const slot = temporalMode === 'hourly'
+      ? Number(row.segments?.hourOfDay ?? 0)
+      : (DAY_OF_WEEK_INDEX[row.segments?.dayOfWeek ?? 'MONDAY'] ?? 0)
+
+    const cpcEur = Number(row.metrics?.averageCpc ?? 0) / 1e6
+    const clicks = Number(row.metrics?.clicks ?? 0)
+    const costEur = Number(row.metrics?.costMicros ?? 0) / 1e6
+
+    if (!slotMap[slot]) slotMap[slot] = { avgCpc: [], clicks: 0, cost: 0 }
+    if (cpcEur > 0) slotMap[slot].avgCpc.push(cpcEur)
+    slotMap[slot].clicks += clicks
+    slotMap[slot].cost += costEur
+  }
+
+  // Construir hourlyData con 24 slots (hourly) o 7 slots (weekly)
+  const slotCount = temporalMode === 'hourly' ? 24 : 7
+  const hourlyData = []
+  for (let i = 0; i < slotCount; i++) {
+    const d = slotMap[i]
+    const avgCpc = d && d.avgCpc.length > 0
+      ? Math.round((d.avgCpc.reduce((a, b) => a + b, 0) / d.avgCpc.length) * 100) / 100
+      : 0
+    hourlyData.push({
+      hour: i,
+      label: temporalMode === 'weekly' ? DAY_OF_WEEK_LABEL[i] : `${i}:00`,
+      avgCpc,
+      clicks: d?.clicks ?? 0,
+      cost: d ? Math.round(d.cost * 100) / 100 : 0,
+    })
+  }
+
+  // Stats y distribución desde todos los CPCs
+  const allCpcs: number[] = []
+  for (const d of Object.values(slotMap)) allCpcs.push(...d.avgCpc)
+
+  const stats = calculateStats(allCpcs)
+  const distribution = generateDistribution(allCpcs, stats.minCpc, stats.maxCpc)
+
+  // Nombre de campaña
+  let campaignName = campaignId
+  try {
+    const nameQuery = `SELECT campaign.name FROM campaign WHERE campaign.id = ${campaignId}`
+    const nameRes = await fetch(
+      `${ADS_API_BASE}/customers/${opts.customerId}/googleAds:search`,
+      { method: 'POST', headers: buildHeaders(opts), body: JSON.stringify({ query: nameQuery }) }
+    )
+    if (nameRes.ok) {
+      const nd = await nameRes.json()
+      if (nd.results?.[0]?.campaign?.name) campaignName = nd.results[0].campaign.name
+    }
+  } catch (_) { /* usar ID como fallback */ }
+
+  return {
+    campaignId,
+    campaignName,
+    temporalMode,
+    period: dateRange,
+    stats: {
+      ...stats,
+      totalClicks: Object.values(slotMap).reduce((sum, d) => sum + d.clicks, 0),
+    },
+    hourlyData,
+    distribution,
+  }
+}
+
+// ── Helpers para cálculos estadísticos ────────────────────────────
+
+function calculateStats(values: number[]) {
+  if (values.length === 0) {
+    return {
+      minCpc: 0,
+      maxCpc: 0,
+      avgCpc: 0,
+      medianCpc: 0,
+      p10: 0,
+      p25: 0,
+      p75: 0,
+      p90: 0,
+      stdDev: 0,
+    }
+  }
+
+  const sorted = values.slice().sort((a, b) => a - b)
+  const min = sorted[0]
+  const max = sorted[sorted.length - 1]
+  const sum = sorted.reduce((a, b) => a + b, 0)
+  const avg = Math.round((sum / sorted.length) * 100) / 100
+
+  // Percentiles
+  const percentile = (p: number) => {
+    const idx = Math.ceil((p / 100) * sorted.length) - 1
+    return Math.round(sorted[Math.max(0, idx)] * 100) / 100
+  }
+
+  const median = percentile(50)
+  const p10 = percentile(10)
+  const p25 = percentile(25)
+  const p75 = percentile(75)
+  const p90 = percentile(90)
+
+  // Desviación estándar
+  const variance = sorted.reduce((acc, val) => acc + Math.pow(val - avg, 2), 0) / sorted.length
+  const stdDev = Math.round(Math.sqrt(variance) * 100) / 100
+
+  return {
+    minCpc: Math.round(min * 100) / 100,
+    maxCpc: Math.round(max * 100) / 100,
+    avgCpc: avg,
+    medianCpc: median,
+    p10,
+    p25,
+    p75,
+    p90,
+    stdDev,
+  }
+}
+
+function generateDistribution(
+  values: number[],
+  minCpc: number,
+  maxCpc: number,
+  buckets: number = 10
+) {
+  if (values.length === 0) return []
+
+  const range = maxCpc - minCpc || 0.1
+  const bucketSize = range / buckets
+
+  const distribution = Array.from({ length: buckets }).map((_, i) => ({
+    priceRangeMin: Math.round((minCpc + i * bucketSize) * 100) / 100,
+    priceRangeMax: Math.round((minCpc + (i + 1) * bucketSize) * 100) / 100,
+    clickCount: 0,
+    percentage: 0,
+  }))
+
+  // Contar clics en cada rango
+  for (const value of values) {
+    const bucketIdx = Math.min(
+      buckets - 1,
+      Math.floor((value - minCpc) / bucketSize)
+    )
+    if (bucketIdx >= 0 && bucketIdx < buckets) {
+      distribution[bucketIdx].clickCount++
+    }
+  }
+
+  // Calcular porcentajes
+  const total = values.length
+  for (const bucket of distribution) {
+    bucket.percentage = total > 0 ? Math.round((bucket.clickCount / total) * 1000) / 10 : 0
+  }
+
+  return distribution
 }
