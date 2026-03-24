@@ -69,50 +69,71 @@ async function loadPortfolioCeilings(
     WHERE bidding_strategy.type = 'TARGET_ROAS'
   `
 
-  // Las estrategias de cartera pertenecen al MCC, no a la cuenta hija.
-  // Consultamos desde el MCC para obtener los techos CPC reales.
-  // Si no hay MCC configurado, fallback a la cuenta hija.
-  const queryAccount = opts.mccCustomerId ?? opts.customerId
+  // Extraer el sufijo de ID de una resource_name: "customers/XXX/biddingStrategies/YYY" → "biddingStrategies/YYY"
+  const extractStrategyId = (rn: string) => {
+    const match = rn.match(/(biddingStrategies\/\d+)$/)
+    return match ? match[1] : null
+  }
 
-  try {
-    const res = await fetch(
-      `${ADS_API_BASE}/customers/${queryAccount}/googleAds:search`,
-      {
-        method: 'POST',
-        headers: buildHeaders(opts),
-        body: JSON.stringify({ query }),
-      }
-    )
-
-    if (!res.ok) {
-      const errText = await res.text()
-      console.warn('[google-ads] No se pudieron leer estrategias de cartera:', res.status, errText)
-      return {}
-    }
-
-    const data = await res.json()
-    const ceilings: Record<string, { name: string; cpcCeiling: number; targetRoas: number }> = {}
-
-    for (const row of data.results ?? []) {
-      const rn      = row.biddingStrategy?.resourceName
-      const micros  = Number(row.biddingStrategy?.targetRoas?.cpcBidCeilingMicros ?? 0)
-      const troas   = Number(row.biddingStrategy?.targetRoas?.targetRoas ?? 0)
+  const processResults = (
+    results: any[],
+    ceilings: Record<string, { name: string; cpcCeiling: number; targetRoas: number }>,
+    sourceAccount: string
+  ) => {
+    for (const row of results) {
+      const rn     = row.biddingStrategy?.resourceName as string | undefined
+      const micros = Number(row.biddingStrategy?.targetRoas?.cpcBidCeilingMicros ?? 0)
+      const troas  = Number(row.biddingStrategy?.targetRoas?.targetRoas ?? 0)
       if (rn && micros > 0) {
-        ceilings[rn] = {
+        const entry = {
           name:       row.biddingStrategy?.name ?? rn,
           cpcCeiling: Math.round(micros / 1e4) / 100,
           targetRoas: troas,
         }
-        console.log(`[google-ads] Estrategia cartera: ${row.biddingStrategy?.name} → techo €${Math.round(micros / 1e4) / 100}`)
+        // Indexar por resource_name completo (para match exacto)
+        ceilings[rn] = entry
+        // Indexar también por sufijo de ID para match cross-cuenta
+        // Ej: "biddingStrategies/10904517918" → resuelve aunque el customerId difiera
+        const stratId = extractStrategyId(rn)
+        if (stratId) ceilings[stratId] = entry
+        console.log(`[google-ads] Estrategia cartera (${sourceAccount}): ${entry.name} → techo €${entry.cpcCeiling}`)
       }
     }
-
-    console.log(`[google-ads] ${Object.keys(ceilings).length} estrategias de cartera cargadas desde cuenta ${queryAccount}`)
-    return ceilings
-  } catch (e) {
-    console.error('[google-ads] Error cargando carteras:', e)
-    return {}
   }
+
+  const ceilings: Record<string, { name: string; cpcCeiling: number; targetRoas: number }> = {}
+
+  // Cuentas a consultar: MCC (si existe) + cuenta hija (para estrategias propias)
+  const accountsToQuery = opts.mccCustomerId
+    ? [opts.mccCustomerId, opts.customerId]
+    : [opts.customerId]
+
+  for (const account of accountsToQuery) {
+    try {
+      const res = await fetch(
+        `${ADS_API_BASE}/customers/${account}/googleAds:search`,
+        {
+          method: 'POST',
+          headers: buildHeaders(opts),
+          body: JSON.stringify({ query }),
+        }
+      )
+
+      if (!res.ok) {
+        const errText = await res.text()
+        console.warn(`[google-ads] No se pudieron leer estrategias de cartera desde ${account}:`, res.status, errText)
+        continue
+      }
+
+      const data = await res.json()
+      processResults(data.results ?? [], ceilings, account)
+    } catch (e) {
+      console.error(`[google-ads] Error cargando carteras desde ${account}:`, e)
+    }
+  }
+
+  console.log(`[google-ads] ${Object.keys(ceilings).length} entradas de estrategia cargadas (resource_name + ID)`)
+  return ceilings
 }
 
 // ── Query principal de métricas de campaña ───────────────────
@@ -191,8 +212,17 @@ export async function getCampaignMetrics(opts: FetchOptions): Promise<CampaignMe
     }
 
     const portfolioRef = row.campaign?.biddingStrategy
-    if (!cpcCeiling && portfolioRef && portfolioCeilings[portfolioRef]) {
-      cpcCeiling = portfolioCeilings[portfolioRef].cpcCeiling
+    if (!cpcCeiling && portfolioRef) {
+      // Match 1: resource_name exacto (mismo customerId)
+      let portfolioEntry = portfolioCeilings[portfolioRef]
+      // Match 2: por sufijo de ID (cross-cuenta MCC ↔ hija)
+      // Ej: campaña referencia "customers/9721363390/biddingStrategies/10904517918"
+      //     pero la estrategia vive en MCC "customers/8804157788/biddingStrategies/10904517918"
+      if (!portfolioEntry) {
+        const idMatch = (portfolioRef as string).match(/(biddingStrategies\/\d+)$/)
+        if (idMatch) portfolioEntry = portfolioCeilings[idMatch[1]]
+      }
+      if (portfolioEntry) cpcCeiling = portfolioEntry.cpcCeiling
     }
 
     if (!cpcCeiling && manualCeilings[campaignName]) {
@@ -203,8 +233,12 @@ export async function getCampaignMetrics(opts: FetchOptions): Promise<CampaignMe
     const avgCpc     = Math.round(Number(row.metrics?.averageCpc ?? 0) / 1e4) / 100
     const costEur    = Math.round(Number(row.metrics?.costMicros ?? 0) / 1e4) / 100
     const convValue  = Number(row.metrics?.conversionsValue ?? 0)
+    const portfolioEntryForRoas = portfolioRef
+      ? (portfolioCeilings[portfolioRef] ??
+         (() => { const m = (portfolioRef as string).match(/(biddingStrategies\/\d+)$/); return m ? portfolioCeilings[m[1]] : undefined })())
+      : undefined
     const targetRoas = Number(row.campaign?.targetRoas?.targetRoas ?? 0) ||
-                       (portfolioRef ? portfolioCeilings[portfolioRef]?.targetRoas : null)
+                       portfolioEntryForRoas?.targetRoas ?? null
 
     const cpcUsagePct = cpcCeiling && cpcCeiling > 0
       ? Math.round((avgCpc / cpcCeiling) * 1000) / 10
