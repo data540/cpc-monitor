@@ -39,56 +39,54 @@ function generateAlerts(campaigns: CampaignMetrics[]): Alert[] {
   const now = new Date()
 
   for (const c of campaigns) {
-    const cost = c.costMicros ? c.costMicros / 1_000_000 : 0
-    const cpc = c.averageCpc ? c.averageCpc / 1_000_000 : null
-    const cpcCeiling = c.cpcBidCeilingMicros ? c.cpcBidCeilingMicros / 1_000_000 : null
+    const cost       = c.costEur
+    const cpcUsage   = c.cpcUsagePct !== null ? (c.cpcUsagePct ?? 0) / 100 : null
 
     // CPC ceiling alert
-    if (cpc !== null && cpcCeiling !== null && cpcCeiling > 0) {
-      const usage = cpc / cpcCeiling
-      if (usage >= 0.95) {
+    if (cpcUsage !== null && c.cpcCeiling !== null) {
+      if (cpcUsage >= 0.95) {
         alerts.push({
-          id: `cpc-critical-${c.id}`,
+          id: `cpc-critical-${c.campaignId}`,
           level: 'critical',
           title: 'CPC al límite del techo',
           description: 'El CPC medio supera el 95% del techo configurado. Riesgo de perder impresiones.',
-          campaign: c.name,
-          value: `${(usage * 100).toFixed(1)}% del techo`,
+          campaign: c.campaignName,
+          value: `${(cpcUsage * 100).toFixed(1)}% del techo`,
           timestamp: new Date(now.getTime() - Math.random() * 3600000),
         })
-      } else if (usage >= 0.8) {
+      } else if (cpcUsage >= 0.8) {
         alerts.push({
-          id: `cpc-warn-${c.id}`,
+          id: `cpc-warn-${c.campaignId}`,
           level: 'warning',
           title: 'CPC aproximándose al techo',
           description: 'El CPC medio supera el 80% del techo. Monitorizar de cerca.',
-          campaign: c.name,
-          value: `${(usage * 100).toFixed(1)}% del techo`,
+          campaign: c.campaignName,
+          value: `${(cpcUsage * 100).toFixed(1)}% del techo`,
           timestamp: new Date(now.getTime() - Math.random() * 7200000),
         })
       }
     }
 
     // IS Lost Budget alert
-    if (c.searchImpressionShare !== undefined && c.searchBudgetLostImpressionShare !== undefined) {
-      const lostBudget = c.searchBudgetLostImpressionShare ?? 0
+    if (c.isLostBudget !== null && c.isLostBudget !== undefined) {
+      const lostBudget = c.isLostBudget ?? 0
       if (lostBudget > 0.3) {
         alerts.push({
-          id: `budget-${c.id}`,
+          id: `budget-${c.campaignId}`,
           level: 'critical',
           title: 'Alto IS perdido por presupuesto',
           description: 'Más del 30% de impresiones potenciales se pierden por presupuesto insuficiente.',
-          campaign: c.name,
+          campaign: c.campaignName,
           value: `${(lostBudget * 100).toFixed(1)}% perdido`,
           timestamp: new Date(now.getTime() - Math.random() * 1800000),
         })
       } else if (lostBudget > 0.15) {
         alerts.push({
-          id: `budget-warn-${c.id}`,
+          id: `budget-warn-${c.campaignId}`,
           level: 'warning',
           title: 'IS perdido por presupuesto moderado',
           description: 'Entre 15-30% de impresiones perdidas por presupuesto.',
-          campaign: c.name,
+          campaign: c.campaignName,
           value: `${(lostBudget * 100).toFixed(1)}% perdido`,
           timestamp: new Date(now.getTime() - Math.random() * 3600000),
         })
@@ -96,26 +94,26 @@ function generateAlerts(campaigns: CampaignMetrics[]): Alert[] {
     }
 
     // ROAS below target
-    if (c.targetRoas && c.conversionsValue && cost > 0) {
-      const roas = c.conversionsValue / cost
+    if (c.targetRoas && c.realRoas !== null && cost > 0) {
+      const roas  = c.realRoas!
       const ratio = roas / c.targetRoas
       if (ratio < 0.7) {
         alerts.push({
-          id: `roas-${c.id}`,
+          id: `roas-${c.campaignId}`,
           level: 'critical',
           title: 'ROAS muy por debajo del objetivo',
           description: `ROAS actual ${roas.toFixed(2)}x vs target ${c.targetRoas}x. Revisar pujas y audiencias.`,
-          campaign: c.name,
+          campaign: c.campaignName,
           value: `${roas.toFixed(2)}x (target: ${c.targetRoas}x)`,
           timestamp: new Date(now.getTime() - Math.random() * 5400000),
         })
       } else if (ratio < 0.85) {
         alerts.push({
-          id: `roas-warn-${c.id}`,
+          id: `roas-warn-${c.campaignId}`,
           level: 'warning',
           title: 'ROAS por debajo del objetivo',
           description: `ROAS actual ${roas.toFixed(2)}x. Ligeramente por debajo del target ${c.targetRoas}x.`,
-          campaign: c.name,
+          campaign: c.campaignName,
           value: `${roas.toFixed(2)}x (target: ${c.targetRoas}x)`,
           timestamp: new Date(now.getTime() - Math.random() * 7200000),
         })
@@ -150,7 +148,7 @@ export function AlertsClient({ user }: Props) {
     try {
       const r = await fetch(`/api/campaigns?customerId=${normalizeCustomerId(cid)}`)
       const j = await r.json()
-      setCampaigns(j.campaigns ?? [])
+      setCampaigns(j.metrics ?? [])
       setLastUpdate(new Date())
     } catch { }
     setLoading(false)

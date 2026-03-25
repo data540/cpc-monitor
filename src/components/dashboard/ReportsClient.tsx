@@ -75,7 +75,7 @@ export function ReportsClient({ user }: Props) {
     try {
       const r = await fetch(`/api/campaigns?customerId=${normalizeCustomerId(cid)}`)
       const j = await r.json()
-      setCampaigns(j.campaigns ?? [])
+      setCampaigns(j.metrics ?? [])
       setLastUpdate(new Date())
     } catch { }
     setLoading(false)
@@ -89,100 +89,90 @@ export function ReportsClient({ user }: Props) {
     load(n)
   }
 
-  // Derived metrics
-  const enriched = campaigns.map(c => {
-    const cost = c.costMicros ? c.costMicros / 1_000_000 : 0
-    const cpc  = c.averageCpc ? c.averageCpc / 1_000_000 : null
-    const ceil = c.cpcBidCeilingMicros ? c.cpcBidCeilingMicros / 1_000_000 : null
-    const roas = cost > 0 && c.conversionsValue ? +(c.conversionsValue / cost).toFixed(2) : null
-    const cpcUsage = cpc !== null && ceil !== null && ceil > 0 ? cpc / ceil : null
-    return { ...c, cost, cpc, ceil, roas, cpcUsage }
-  })
-
-  const totalCost  = enriched.reduce((s, c) => s + c.cost, 0)
-  const totalClics = enriched.reduce((s, c) => s + (c.clicks ?? 0), 0)
-  const totalImps  = enriched.reduce((s, c) => s + (c.impressions ?? 0), 0)
-  const totalConv  = enriched.reduce((s, c) => s + (c.conversions ?? 0), 0)
-  const totalValue = enriched.reduce((s, c) => s + (c.conversionsValue ?? 0), 0)
+  // All fields already in correct units from CampaignMetrics
+  const totalCost  = campaigns.reduce((s, m) => s + m.costEur, 0)
+  const totalClics = campaigns.reduce((s, m) => s + m.clicks, 0)
+  const totalImps  = campaigns.reduce((s, m) => s + m.impressions, 0)
   const globalCpc  = totalClics > 0 ? totalCost / totalClics : 0
-  const globalRoas = totalCost > 0 ? totalValue / totalCost : 0
+  const roasCamps  = campaigns.filter(m => m.realRoas !== null)
+  const globalRoas = roasCamps.length > 0
+    ? roasCamps.reduce((s, m) => s + (m.realRoas ?? 0), 0) / roasCamps.length
+    : 0
   const globalCtr  = totalImps > 0 ? totalClics / totalImps : 0
 
   // Chart data helpers
-  const costChart = [...enriched].sort((a, b) => b.cost - a.cost).slice(0, 12).map(c => ({
-    name: c.name.length > 20 ? c.name.slice(0, 20) + '…' : c.name,
-    cost: +c.cost.toFixed(2),
+  const shortName = (n: string) => n.replace(/^AEU_[A-Z]{2}_[A-Z]{2}_/, '').slice(0, 20)
+
+  const costChart = [...campaigns].sort((a, b) => b.costEur - a.costEur).slice(0, 12).map(m => ({
+    name: shortName(m.campaignName),
+    cost: +m.costEur.toFixed(2),
   }))
 
-  const cpcChart = enriched.filter(c => c.cpc !== null).sort((a, b) => (b.cpcUsage ?? 0) - (a.cpcUsage ?? 0)).slice(0, 12).map(c => ({
-    name: c.name.length > 20 ? c.name.slice(0, 20) + '…' : c.name,
-    cpc: c.cpc!,
-    ceil: c.ceil ?? 0,
-    color: (c.cpcUsage ?? 0) >= 0.9 ? '#EF4444' : (c.cpcUsage ?? 0) >= 0.7 ? '#F59E0B' : '#22C55E',
+  const cpcChart = campaigns.filter(m => m.cpcUsagePct !== null).sort((a, b) => (b.cpcUsagePct ?? 0) - (a.cpcUsagePct ?? 0)).slice(0, 12).map(m => ({
+    name: shortName(m.campaignName),
+    cpc:  m.avgCpc,
+    ceil: m.cpcCeiling ?? 0,
+    color: (m.cpcUsagePct ?? 0) >= 90 ? '#EF4444' : (m.cpcUsagePct ?? 0) >= 70 ? '#F59E0B' : '#22C55E',
   }))
 
-  const roasChart = enriched.filter(c => c.roas !== null).sort((a, b) => (b.roas ?? 0) - (a.roas ?? 0)).slice(0, 12).map(c => ({
-    name: c.name.length > 20 ? c.name.slice(0, 20) + '…' : c.name,
-    roas: c.roas!,
-    target: c.targetRoas ?? undefined,
+  const roasChart = campaigns.filter(m => m.realRoas !== null).sort((a, b) => (b.realRoas ?? 0) - (a.realRoas ?? 0)).slice(0, 12).map(m => ({
+    name:   shortName(m.campaignName),
+    roas:   m.realRoas!,
+    target: m.targetRoas ?? undefined,
   }))
 
-  const isChart = enriched.filter(c => c.searchImpressionShare !== undefined).map(c => ({
-    name: c.name.length > 20 ? c.name.slice(0, 20) + '…' : c.name,
-    is: +((c.searchImpressionShare ?? 0) * 100).toFixed(1),
-    lostBudget: +((c.searchBudgetLostImpressionShare ?? 0) * 100).toFixed(1),
-    lostRank: +((c.searchRankLostImpressionShare ?? 0) * 100).toFixed(1),
+  const isChart = campaigns.filter(m => m.isActual !== null).map(m => ({
+    name:       shortName(m.campaignName),
+    is:         +((m.isActual ?? 0) * 100).toFixed(1),
+    lostBudget: +((m.isLostBudget ?? 0) * 100).toFixed(1),
+    lostRank:   +((m.isLostRank ?? 0) * 100).toFixed(1),
   }))
 
   // CSV exports
   const exportSummary = () => {
-    const header = ['Campaña', 'Coste (€)', 'Clics', 'Impresiones', 'CTR', 'CPC Medio (€)', 'Conversiones', 'Valor Conv. (€)', 'ROAS']
-    const rows = enriched.map(c => [
-      c.name,
-      fmt(c.cost),
-      String(c.clicks ?? 0),
-      String(c.impressions ?? 0),
-      fmtPct(c.impressions ? (c.clicks ?? 0) / c.impressions : 0),
-      c.cpc !== null ? fmt(c.cpc) : '—',
-      String(c.conversions?.toFixed(1) ?? '—'),
-      c.conversionsValue ? fmt(c.conversionsValue) : '—',
-      c.roas !== null ? fmt(c.roas) : '—',
+    const header = ['Campaña', 'Coste (€)', 'Clics', 'Impresiones', 'CTR', 'CPC Medio (€)', 'ROAS']
+    const rows = campaigns.map(m => [
+      m.campaignName,
+      fmt(m.costEur),
+      String(m.clicks),
+      String(m.impressions),
+      fmtPct(m.ctr / 100),
+      fmt(m.avgCpc),
+      m.realRoas !== null ? fmt(m.realRoas) : '—',
     ])
     downloadCSV(`reporte-resumen-${customerId}-${new Date().toISOString().slice(0, 10)}.csv`, [header, ...rows])
   }
 
   const exportCpc = () => {
     const header = ['Campaña', 'CPC Medio (€)', 'Techo CPC (€)', 'Uso (%)', 'Estado']
-    const rows = enriched.map(c => [
-      c.name,
-      c.cpc !== null ? fmt(c.cpc) : '—',
-      c.ceil !== null ? fmt(c.ceil) : '—',
-      c.cpcUsage !== null ? fmtPct(c.cpcUsage) : '—',
-      c.cpcUsage !== null ? (c.cpcUsage >= 0.9 ? 'CRÍTICO' : c.cpcUsage >= 0.7 ? 'AVISO' : 'OK') : '—',
+    const rows = campaigns.map(m => [
+      m.campaignName,
+      fmt(m.avgCpc),
+      m.cpcCeiling !== null ? fmt(m.cpcCeiling) : '—',
+      m.cpcUsagePct !== null ? `${m.cpcUsagePct.toFixed(1)}%` : '—',
+      m.cpcUsagePct !== null ? (m.cpcUsagePct >= 90 ? 'CRÍTICO' : m.cpcUsagePct >= 70 ? 'AVISO' : 'OK') : '—',
     ])
     downloadCSV(`reporte-cpc-${customerId}-${new Date().toISOString().slice(0, 10)}.csv`, [header, ...rows])
   }
 
   const exportRoas = () => {
-    const header = ['Campaña', 'ROAS', 'Target ROAS', 'Coste (€)', 'Valor Conv. (€)', 'Conversiones']
-    const rows = enriched.map(c => [
-      c.name,
-      c.roas !== null ? fmt(c.roas) : '—',
-      c.targetRoas ? fmt(c.targetRoas) : '—',
-      fmt(c.cost),
-      c.conversionsValue ? fmt(c.conversionsValue) : '—',
-      c.conversions?.toFixed(1) ?? '—',
+    const header = ['Campaña', 'ROAS', 'Target ROAS', 'Coste (€)']
+    const rows = campaigns.map(m => [
+      m.campaignName,
+      m.realRoas !== null ? fmt(m.realRoas) : '—',
+      m.targetRoas ? fmt(m.targetRoas) : '—',
+      fmt(m.costEur),
     ])
     downloadCSV(`reporte-roas-${customerId}-${new Date().toISOString().slice(0, 10)}.csv`, [header, ...rows])
   }
 
   const exportIs = () => {
     const header = ['Campaña', 'IS (%)', 'IS Perdido Presupuesto (%)', 'IS Perdido Ranking (%)']
-    const rows = enriched.map(c => [
-      c.name,
-      c.searchImpressionShare !== undefined ? fmtPct(c.searchImpressionShare) : '—',
-      c.searchBudgetLostImpressionShare !== undefined ? fmtPct(c.searchBudgetLostImpressionShare) : '—',
-      c.searchRankLostImpressionShare !== undefined ? fmtPct(c.searchRankLostImpressionShare) : '—',
+    const rows = campaigns.map(m => [
+      m.campaignName,
+      m.isActual !== null ? fmtPct(m.isActual) : '—',
+      m.isLostBudget !== null ? fmtPct(m.isLostBudget) : '—',
+      m.isLostRank !== null ? fmtPct(m.isLostRank) : '—',
     ])
     downloadCSV(`reporte-is-${customerId}-${new Date().toISOString().slice(0, 10)}.csv`, [header, ...rows])
   }
@@ -259,7 +249,7 @@ export function ReportsClient({ user }: Props) {
             {activeReport === 'summary' && (
               <div className="bg-bg-card border border-bg-border rounded-lg overflow-hidden">
                 <div className="px-5 py-4 border-b border-bg-border flex items-center justify-between">
-                  <p className="num text-[10px] text-text-tertiary tracking-widest uppercase">Resumen General — {enriched.length} campañas</p>
+                  <p className="num text-[10px] text-text-tertiary tracking-widest uppercase">Resumen General — {campaigns.length} campañas</p>
                   <ExportButton label="Exportar CSV" onClick={exportSummary} />
                 </div>
                 <div className="p-5">
@@ -283,15 +273,15 @@ export function ReportsClient({ user }: Props) {
                       </tr>
                     </thead>
                     <tbody>
-                      {enriched.sort((a, b) => b.cost - a.cost).map(c => (
-                        <tr key={c.id} className="border-t border-bg-border hover:bg-bg-hover">
-                          <td className="num text-xs text-text-primary px-3 py-2 max-w-[200px] truncate">{c.name}</td>
-                          <td className="num text-xs text-text-secondary px-3 py-2 text-right">{fmt(c.cost)}€</td>
-                          <td className="num text-xs text-text-secondary px-3 py-2 text-right">{(c.clicks ?? 0).toLocaleString('es-ES')}</td>
-                          <td className="num text-xs text-text-secondary px-3 py-2 text-right">{fmtPct(c.impressions ? (c.clicks ?? 0) / c.impressions : 0)}</td>
-                          <td className="num text-xs text-text-secondary px-3 py-2 text-right">{c.cpc !== null ? `${fmt(c.cpc)}€` : '—'}</td>
-                          <td className="num text-xs text-text-secondary px-3 py-2 text-right">{c.conversions?.toFixed(1) ?? '—'}</td>
-                          <td className="num text-xs px-3 py-2 text-right" style={{ color: c.roas !== null ? (c.roas >= (c.targetRoas ?? 0) ? '#22C55E' : '#F59E0B') : '#666' }}>{c.roas !== null ? `${fmt(c.roas)}x` : '—'}</td>
+                      {[...campaigns].sort((a, b) => b.costEur - a.costEur).map(m => (
+                        <tr key={m.campaignId} className="border-t border-bg-border hover:bg-bg-hover">
+                          <td className="num text-xs text-text-primary px-3 py-2 max-w-[200px] truncate">{m.campaignName}</td>
+                          <td className="num text-xs text-text-secondary px-3 py-2 text-right">{fmt(m.costEur)}€</td>
+                          <td className="num text-xs text-text-secondary px-3 py-2 text-right">{m.clicks.toLocaleString('es-ES')}</td>
+                          <td className="num text-xs text-text-secondary px-3 py-2 text-right">{fmtPct(m.ctr / 100)}</td>
+                          <td className="num text-xs text-text-secondary px-3 py-2 text-right">{fmt(m.avgCpc)}€</td>
+                          <td className="num text-xs text-text-secondary px-3 py-2 text-right">—</td>
+                          <td className="num text-xs px-3 py-2 text-right" style={{ color: m.realRoas !== null ? (m.realRoas >= (m.targetRoas ?? 0) ? '#22C55E' : '#F59E0B') : '#666' }}>{m.realRoas !== null ? `${fmt(m.realRoas)}x` : '—'}</td>
                         </tr>
                       ))}
                     </tbody>
