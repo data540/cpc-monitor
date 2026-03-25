@@ -154,7 +154,39 @@ export async function GET(request: Request) {
       results.campaigns = { error: e.message }
     }
 
-    // ── 5. Estrategias de cartera ─────────────────────────────
+    // ── 5. Estrategias de cartera (MCC + hija) y detalle MARCA ───────────
+    const strategyQuery = `
+      SELECT
+        bidding_strategy.resource_name,
+        bidding_strategy.name,
+        bidding_strategy.type,
+        bidding_strategy.target_roas.target_roas,
+        bidding_strategy.target_roas.cpc_bid_ceiling_micros
+      FROM bidding_strategy
+      WHERE bidding_strategy.type = 'TARGET_ROAS'
+    `
+
+    try {
+      const [mccRes, childRes] = await Promise.all([
+        fetch(`${ADS_API_BASE}/customers/${MCC_CUSTOMER_ID}/googleAds:search`, {
+          method: 'POST',
+          headers,
+          body: JSON.stringify({ query: strategyQuery }),
+        }),
+        fetch(`${ADS_API_BASE}/customers/${cid}/googleAds:search`, {
+          method: 'POST',
+          headers,
+          body: JSON.stringify({ query: strategyQuery }),
+        }),
+      ])
+      results.portfolio_strategies_mcc   = { status: mccRes.status,   data: await mccRes.json() }
+      results.portfolio_strategies_child = { status: childRes.status, data: await childRes.json() }
+    } catch (e: any) {
+      results.portfolio_strategies_mcc   = { error: e.message }
+      results.portfolio_strategies_child = { error: e.message }
+    }
+
+    // ── 6. Detalle campañas MARCA ─────────────────────────────
     try {
       const res = await fetch(
         `${ADS_API_BASE}/customers/${cid}/googleAds:search`,
@@ -164,20 +196,23 @@ export async function GET(request: Request) {
           body: JSON.stringify({
             query: `
               SELECT
-                bidding_strategy.resource_name,
-                bidding_strategy.name,
-                bidding_strategy.type,
-                bidding_strategy.target_roas.target_roas,
-                bidding_strategy.target_roas.cpc_bid_ceiling_micros
-              FROM bidding_strategy
-              WHERE bidding_strategy.type = 'TARGET_ROAS'
+                campaign.id,
+                campaign.name,
+                campaign.bidding_strategy_type,
+                campaign.bidding_strategy,
+                campaign.target_roas.target_roas,
+                campaign.target_roas.cpc_bid_ceiling_micros
+              FROM campaign
+              WHERE campaign.status = 'ENABLED'
+                AND campaign.name LIKE '%MARCA%'
+                AND segments.date DURING LAST_30_DAYS
             `,
           }),
         }
       )
-      results.portfolio_strategies = { status: res.status, data: await res.json() }
+      results.marca_campaigns_detail = { status: res.status, data: await res.json() }
     } catch (e: any) {
-      results.portfolio_strategies = { error: e.message }
+      results.marca_campaigns_detail = { error: e.message }
     }
   }
 

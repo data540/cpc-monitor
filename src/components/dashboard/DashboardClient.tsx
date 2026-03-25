@@ -11,7 +11,10 @@ interface Props {
   user: { id: string; name?: string; email?: string; image?: string }
 }
 
-const DEFAULT_CUSTOMER_ID = process.env.NEXT_PUBLIC_GOOGLE_ADS_CUSTOMER_ID ?? ''
+const ENV_CUSTOMER_ID = process.env.NEXT_PUBLIC_GOOGLE_ADS_CUSTOMER_ID ?? ''
+function normalizeCustomerId(value: string): string { return value.replace(/-/g, '').trim() }
+function isValidCustomerId(value: string): boolean { return /^\d{10}$/.test(normalizeCustomerId(value)) }
+const DEFAULT_CUSTOMER_ID = isValidCustomerId(ENV_CUSTOMER_ID) ? normalizeCustomerId(ENV_CUSTOMER_ID) : ''
 
 // ── Sidebar ───────────────────────────────────────────────────
 
@@ -92,7 +95,7 @@ function Sidebar({ activeView, onViewChange, lastUpdate, loading, onRefresh, cus
 
         {/* Customer ID en sidebar */}
         <div className="pt-4">
-          <p className="num text-[9px] text-text-tertiary tracking-[0.2em] uppercase px-3 mb-2">Account</p>
+          <p className="num text-[9px] text-cyan-DEFAULT tracking-[0.2em] uppercase px-3 mb-2">Account</p>
           <div className="px-3 space-y-2">
             <input
               type="text"
@@ -177,7 +180,7 @@ function SummaryCard({
 
 export function DashboardClient({ user }: Props) {
   const [metrics,          setMetrics]          = useState<CampaignMetrics[]>([])
-  const [loading,          setLoading]          = useState(true)
+  const [loading,          setLoading]          = useState(false)
   const [error,            setError]            = useState<string | null>(null)
   const [lastUpdate,       setLastUpdate]       = useState<Date | null>(null)
   const [customerId,       setCustomerId]       = useState(DEFAULT_CUSTOMER_ID)
@@ -186,10 +189,11 @@ export function DashboardClient({ user }: Props) {
   const [selectedCampaign, setSelectedCampaign] = useState<CampaignMetrics | null>(null)
 
   const fetchMetrics = useCallback(async (cid: string) => {
-    if (!cid) return
+    if (!isValidCustomerId(cid)) return
+    const normalizedCid = normalizeCustomerId(cid)
     setLoading(true); setError(null)
     try {
-      const res  = await fetch(`/api/campaigns?customerId=${cid.replace(/-/g, '')}`)
+      const res  = await fetch(`/api/campaigns?customerId=${normalizedCid}`)
       const data = await res.json()
       if (!res.ok) throw new Error(data.error ?? 'Error desconocido')
       setMetrics(data.metrics)
@@ -201,7 +205,9 @@ export function DashboardClient({ user }: Props) {
     }
   }, [])
 
-  useEffect(() => { if (customerId) fetchMetrics(customerId) }, [customerId, fetchMetrics])
+  useEffect(() => {
+    if (isValidCustomerId(customerId)) fetchMetrics(customerId)
+  }, [customerId, fetchMetrics])
 
   // Auto-refresh cada 6 horas
   useEffect(() => {
@@ -214,7 +220,16 @@ export function DashboardClient({ user }: Props) {
     ? metrics.reduce((a, m) => a + (m.isActual ?? 0), 0) / metrics.filter(m => m.isActual !== null).length
     : null
 
-  const handleLoad = () => setCustomerId(inputId)
+  const handleLoad = () => {
+    const normalized = normalizeCustomerId(inputId)
+    if (!isValidCustomerId(normalized)) {
+      setError('Introduce un Customer ID válido (10 dígitos, sin guiones).')
+      setMetrics([])
+      return
+    }
+    setInputId(normalized)
+    setCustomerId(normalized)
+  }
 
   return (
     <div className="flex min-h-screen bg-bg-base">
