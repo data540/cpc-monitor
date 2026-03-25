@@ -121,6 +121,9 @@ async function fetchCampaignRows(
       campaign.bidding_strategy,
       campaign.target_roas.target_roas,
       campaign.target_roas.cpc_bid_ceiling_micros,
+      bidding_strategy.name,
+      bidding_strategy.target_roas.target_roas,
+      bidding_strategy.target_roas.cpc_bid_ceiling_micros,
       metrics.average_cpc,
       metrics.clicks,
       metrics.impressions,
@@ -175,13 +178,25 @@ export async function getCampaignMetrics(opts: FetchOptions): Promise<CampaignMe
   return rows.map((row: any) => {
     const campaignName = row.campaign?.name ?? ''
 
-    // CPC techo: nivel campaña → cartera → manual
+    // CPC techo: nivel campaña → portfolio inline (JOIN en GAQL) → lookup cartera → manual
     let cpcCeiling: number | null = null
+
+    // Nivel 1: ceiling a nivel campaña
     const campaignMicros = Number(row.campaign?.targetRoas?.cpcBidCeilingMicros ?? 0)
     if (campaignMicros > 0) {
       cpcCeiling = Math.round(campaignMicros / 1e4) / 100
     }
 
+    // Nivel 2a: ceiling del portfolio resuelto inline por la API (bidding_strategy.* en la query)
+    // Cubre estrategias de MCC sin necesidad de cross-account lookup
+    if (!cpcCeiling) {
+      const inlineMicros = Number(row.biddingStrategy?.targetRoas?.cpcBidCeilingMicros ?? 0)
+      if (inlineMicros > 0) {
+        cpcCeiling = Math.round(inlineMicros / 1e4) / 100
+      }
+    }
+
+    // Nivel 2b: fallback — lookup en el diccionario de carteras cargado previamente
     const portfolioRef = row.campaign?.biddingStrategy as string | undefined
     const strategyId   = portfolioRef?.split('/').pop()
     const portfolioMatch = portfolioRef
@@ -191,7 +206,7 @@ export async function getCampaignMetrics(opts: FetchOptions): Promise<CampaignMe
         )
       : undefined
 
-    if (!cpcCeiling && portfolioMatch) {
+    if (!cpcCeiling && portfolioMatch?.cpcCeiling) {
       cpcCeiling = portfolioMatch.cpcCeiling
     }
 
@@ -204,6 +219,7 @@ export async function getCampaignMetrics(opts: FetchOptions): Promise<CampaignMe
     const costEur    = Math.round(Number(row.metrics?.costMicros ?? 0) / 1e4) / 100
     const convValue  = Number(row.metrics?.conversionsValue ?? 0)
     const targetRoas = Number(row.campaign?.targetRoas?.targetRoas ?? 0) ||
+                       Number(row.biddingStrategy?.targetRoas?.targetRoas ?? 0) ||
                        (portfolioMatch?.targetRoas ?? null)
 
     const cpcUsagePct = cpcCeiling && cpcCeiling > 0
