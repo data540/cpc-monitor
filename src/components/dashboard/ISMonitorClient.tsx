@@ -413,47 +413,92 @@ export function ISMonitorClient({ user }: Props) {
                     </div>
                   </div>
 
-                  {/* ── Radar: IS vs Top IS vs AbsTop IS ──── */}
+                  {/* ── Posicionamiento SERP ─────────────────── */}
                   {metrics.length > 0 && (
-                    <div className="bg-bg-card border border-bg-border rounded-md p-4">
-                      <h3 className="num text-[10px] text-text-tertiary tracking-widest uppercase mb-4">
-                        Posicionamiento en SERP (Top IS / AbsTop IS)
-                      </h3>
-                      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
-                        {metrics.map(m => (
-                          <div key={m.campaignId} className="bg-bg-base border border-bg-border rounded p-3">
-                            <p className="num text-[9px] text-text-secondary truncate mb-2">{m.campaignName}</p>
-                            <div className="space-y-1.5">
-                              <div>
-                                <div className="flex justify-between num text-[9px] text-text-tertiary mb-0.5">
-                                  <span>IS Real</span>
-                                  <span>{m.isActual !== null ? `${Math.round(m.isActual * 100)}%` : '—'}</span>
+                    <div className="bg-bg-card border border-bg-border rounded-md p-5">
+                      <div className="flex items-center justify-between mb-5">
+                        <h3 className="num text-xs font-semibold text-text-primary tracking-widest uppercase">
+                          Posicionamiento en SERP
+                        </h3>
+                        <div className="flex gap-4 text-[10px] num text-text-tertiary">
+                          <span className="flex items-center gap-1.5">
+                            <span className="w-2.5 h-2.5 rounded-sm bg-cyan-DEFAULT inline-block" /> IS Real
+                          </span>
+                          <span className="flex items-center gap-1.5">
+                            <span className="w-2.5 h-2.5 rounded-sm bg-green-DEFAULT inline-block" /> Top IS
+                          </span>
+                          <span className="flex items-center gap-1.5">
+                            <span className="w-2.5 h-2.5 rounded-sm bg-amber-DEFAULT inline-block" /> Abs Top IS
+                          </span>
+                        </div>
+                      </div>
+                      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+                        {metrics.map(m => {
+                          const isVal      = m.isActual ?? 0
+                          const topVal     = m.topImpressionPct ?? 0
+                          const absTopVal  = m.absoluteTopImpressionPct ?? 0
+                          const cardStatus = isStatus(m.isActual)
+                          return (
+                            <div
+                              key={m.campaignId}
+                              className={`bg-bg-base border rounded-md p-4 transition-colors ${
+                                cardStatus === 'alert'   ? 'border-red-DEFAULT/40'
+                                : cardStatus === 'warning' ? 'border-amber-DEFAULT/30'
+                                : 'border-bg-border'
+                              }`}
+                            >
+                              {/* Cabecera tarjeta */}
+                              <div className="flex items-start justify-between gap-2 mb-4">
+                                <p className="num text-[11px] text-text-primary font-medium leading-tight truncate">
+                                  {m.campaignName.replace(/^AEU_[A-Z]{2}_[A-Z]{2}_/, '')}
+                                </p>
+                                <StatusBadge status={cardStatus} />
+                              </div>
+
+                              {/* IS Real */}
+                              <div className="mb-3">
+                                <div className="flex justify-between items-center mb-1.5">
+                                  <span className="num text-[10px] text-cyan-DEFAULT tracking-wider">IS REAL</span>
+                                  <span className="num text-sm font-bold text-cyan-DEFAULT">{Math.round(isVal * 100)}%</span>
                                 </div>
-                                <div className="h-1 bg-bg-border rounded-full overflow-hidden">
-                                  <div className="h-full bg-cyan-DEFAULT rounded-full" style={{ width: `${(m.isActual ?? 0) * 100}%` }} />
+                                <div className="h-2.5 bg-bg-border rounded-full overflow-hidden">
+                                  <div
+                                    className="h-full bg-cyan-DEFAULT rounded-full transition-all duration-700"
+                                    style={{ width: `${isVal * 100}%` }}
+                                  />
                                 </div>
                               </div>
-                              <div>
-                                <div className="flex justify-between num text-[9px] text-text-tertiary mb-0.5">
-                                  <span>Top IS</span>
-                                  <span>{m.topImpressionPct !== null ? `${Math.round((m.topImpressionPct ?? 0) * 100)}%` : '—'}</span>
+
+                              {/* Top IS */}
+                              <div className="mb-3">
+                                <div className="flex justify-between items-center mb-1.5">
+                                  <span className="num text-[10px] text-green-DEFAULT tracking-wider">TOP IS</span>
+                                  <span className="num text-sm font-bold text-green-DEFAULT">{Math.round(topVal * 100)}%</span>
                                 </div>
-                                <div className="h-1 bg-bg-border rounded-full overflow-hidden">
-                                  <div className="h-full bg-green-DEFAULT rounded-full" style={{ width: `${(m.topImpressionPct ?? 0) * 100}%` }} />
+                                <div className="h-2.5 bg-bg-border rounded-full overflow-hidden">
+                                  <div
+                                    className="h-full bg-green-DEFAULT rounded-full transition-all duration-700"
+                                    style={{ width: `${topVal * 100}%` }}
+                                  />
                                 </div>
                               </div>
+
+                              {/* Abs Top IS */}
                               <div>
-                                <div className="flex justify-between num text-[9px] text-text-tertiary mb-0.5">
-                                  <span>Abs Top IS</span>
-                                  <span>{m.absoluteTopImpressionPct !== null ? `${Math.round((m.absoluteTopImpressionPct ?? 0) * 100)}%` : '—'}</span>
+                                <div className="flex justify-between items-center mb-1.5">
+                                  <span className="num text-[10px] text-amber-DEFAULT tracking-wider">ABS TOP IS</span>
+                                  <span className="num text-sm font-bold text-amber-DEFAULT">{Math.round(absTopVal * 100)}%</span>
                                 </div>
-                                <div className="h-1 bg-bg-border rounded-full overflow-hidden">
-                                  <div className="h-full bg-amber-DEFAULT rounded-full" style={{ width: `${(m.absoluteTopImpressionPct ?? 0) * 100}%` }} />
+                                <div className="h-2.5 bg-bg-border rounded-full overflow-hidden">
+                                  <div
+                                    className="h-full bg-amber-DEFAULT rounded-full transition-all duration-700"
+                                    style={{ width: `${absTopVal * 100}%` }}
+                                  />
                                 </div>
                               </div>
                             </div>
-                          </div>
-                        ))}
+                          )
+                        })}
                       </div>
                     </div>
                   )}
