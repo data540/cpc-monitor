@@ -144,8 +144,8 @@ export function RoasTrackerClient({ user }: Props) {
     else { setSortKey(key); setSortDir('asc') }
   }
 
-  // Only campaigns that have ROAS data
-  const roasCampaigns = metrics.filter(m => m.realRoas !== null || m.targetRoas !== null)
+  // All campaigns — show — for those without ROAS data
+  const roasCampaigns = metrics
 
   const sorted = [...roasCampaigns].sort((a, b) => {
     const dir = sortDir === 'asc' ? 1 : -1
@@ -156,11 +156,12 @@ export function RoasTrackerClient({ user }: Props) {
   })
 
   // KPIs
-  const totalCost  = roasCampaigns.reduce((s, m) => s + m.costEur, 0)
-  const belowTarget = roasCampaigns.filter(m => roasStatus(m.realRoas, m.targetRoas) === 'below').length
-  const aboveTarget = roasCampaigns.filter(m => roasStatus(m.realRoas, m.targetRoas) === 'above').length
-  const avgRoas = roasCampaigns.length > 0
-    ? roasCampaigns.filter(m => m.realRoas !== null).reduce((s, m) => s + (m.realRoas ?? 0), 0) / roasCampaigns.filter(m => m.realRoas !== null).length
+  const totalCost   = metrics.reduce((s, m) => s + m.costEur, 0)
+  const withRoas    = metrics.filter(m => m.realRoas !== null)
+  const belowTarget = metrics.filter(m => roasStatus(m.realRoas, m.targetRoas) === 'below').length
+  const aboveTarget = metrics.filter(m => roasStatus(m.realRoas, m.targetRoas) === 'above').length
+  const avgRoas     = withRoas.length > 0
+    ? withRoas.reduce((s, m) => s + (m.realRoas ?? 0), 0) / withRoas.length
     : null
 
   // Bar chart — top 15 by cost
@@ -354,9 +355,9 @@ export function RoasTrackerClient({ user }: Props) {
             </div>
           )}
 
-          {!loading && roasCampaigns.length === 0 && customerId && (
+          {!loading && metrics.length === 0 && customerId && (
             <div className="bg-bg-card border border-bg-border rounded-lg p-12 text-center">
-              <p className="num text-text-tertiary text-sm tracking-wider">No hay datos de ROAS disponibles para este Customer ID</p>
+              <p className="num text-text-tertiary text-sm tracking-wider">No hay datos disponibles para este Customer ID</p>
             </div>
           )}
 
