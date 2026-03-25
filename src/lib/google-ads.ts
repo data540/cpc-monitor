@@ -211,7 +211,7 @@ export async function getCampaignMetrics(opts: FetchOptions): Promise<CampaignMe
       cpcCeiling = Math.round(campaignMicros / 1e4) / 100
     }
 
-    const portfolioRef = row.campaign?.biddingStrategy
+    const portfolioRef = row.campaign?.biddingStrategy as string | undefined
     if (!cpcCeiling && portfolioRef) {
       // Match 1: resource_name exacto (mismo customerId)
       let portfolioEntry = portfolioCeilings[portfolioRef]
@@ -219,10 +219,17 @@ export async function getCampaignMetrics(opts: FetchOptions): Promise<CampaignMe
       // Ej: campaña referencia "customers/9721363390/biddingStrategies/10904517918"
       //     pero la estrategia vive en MCC "customers/8804157788/biddingStrategies/10904517918"
       if (!portfolioEntry) {
-        const idMatch = (portfolioRef as string).match(/(biddingStrategies\/\d+)$/)
+        const idMatch = portfolioRef.match(/(biddingStrategies\/\d+)$/)
         if (idMatch) portfolioEntry = portfolioCeilings[idMatch[1]]
       }
-      if (portfolioEntry) cpcCeiling = portfolioEntry.cpcCeiling
+      if (portfolioEntry) {
+        cpcCeiling = portfolioEntry.cpcCeiling
+      } else {
+        console.warn(
+          `[google-ads] Sin techo para "${campaignName}" | portfolioRef="${portfolioRef}" | ` +
+          `claves disponibles: ${Object.keys(portfolioCeilings).slice(0, 10).join(', ')}`
+        )
+      }
     }
 
     if (!cpcCeiling && manualCeilings[campaignName]) {
