@@ -215,12 +215,6 @@ export async function getCampaignMetrics(opts: FetchOptions): Promise<CampaignMe
         )
       : undefined
 
-    // Log de diagnóstico para campañas MARCA
-    if (campaignName.includes('MARCA')) {
-      const suffixKey = strategyId ? `biddingStrategies/${strategyId}` : null
-      console.log(`[debug-MARCA] ${campaignName}: portfolioCeilingsCount=${Object.keys(portfolioCeilings).length} portfolioRef=${portfolioRef ?? 'NULL'} strategyId=${strategyId ?? 'NULL'} suffixExists=${suffixKey ? !!portfolioCeilings[suffixKey] : false} matchFound=${!!portfolioMatch} inlineMicros=${Number(row.biddingStrategy?.targetRoas?.cpcBidCeilingMicros ?? 0)}`)
-    }
-
     if (!cpcCeiling && portfolioMatch?.cpcCeiling) {
       cpcCeiling = portfolioMatch.cpcCeiling
     }
