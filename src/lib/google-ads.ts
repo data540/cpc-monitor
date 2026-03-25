@@ -71,10 +71,10 @@ async function loadPortfolioCeilings(
 
   const sourceCustomers = Array.from(new Set([opts.mccCustomerId, opts.customerId].filter(Boolean))) as string[]
 
-  try {
-    const ceilings: Record<string, { name: string; cpcCeiling: number; targetRoas: number }> = {}
+  const ceilings: Record<string, { name: string; cpcCeiling: number; targetRoas: number }> = {}
 
-    for (const sourceCustomerId of sourceCustomers) {
+  for (const sourceCustomerId of sourceCustomers) {
+    try {
       const res = await fetch(
         `${ADS_API_BASE}/customers/${sourceCustomerId}/googleAds:search`,
         {
@@ -84,7 +84,16 @@ async function loadPortfolioCeilings(
         }
       )
 
+      if (!res.ok) {
+        const errText = await res.text()
+        console.warn(`[google-ads] Estrategias de cartera HTTP ${res.status} desde ${sourceCustomerId}:`, errText.slice(0, 200))
+        continue
+      }
+
       const data = await res.json()
+      const count = data.results?.length ?? 0
+      console.log(`[google-ads] Estrategias TARGET_ROAS cargadas desde ${sourceCustomerId}: ${count}`)
+
       for (const row of data.results ?? []) {
         const rn         = row.biddingStrategy?.resourceName as string | undefined
         const strategyId = rn?.split('/').pop()
@@ -98,13 +107,13 @@ async function loadPortfolioCeilings(
         if (rn)         ceilings[rn] = normalized
         if (strategyId) ceilings[`biddingStrategies/${strategyId}`] = normalized
       }
+    } catch (e) {
+      console.error(`[google-ads] Error cargando estrategias desde ${sourceCustomerId}:`, e)
     }
-
-    return ceilings
-  } catch (e) {
-    console.error(`[google-ads] Error cargando estrategias de cartera:`, e)
-    return {}
   }
+
+  console.log(`[google-ads] Total claves en portfolioCeilings: ${Object.keys(ceilings).length}`)
+  return ceilings
 }
 
 // ── Query principal de métricas de campaña ───────────────────
@@ -261,6 +270,20 @@ export async function getCampaignMetrics(opts: FetchOptions): Promise<CampaignMe
       targetRoas:               targetRoas || null,
       realRoas,
       recommendation:           buildRecommendation({ cpcUsagePct, isActual, cpcCeiling, realRoas, targetRoas }),
+      _debug: {
+        portfolioRef,
+        campaignCeilingMicros:  Number(row.campaign?.targetRoas?.cpcBidCeilingMicros ?? 0),
+        inlineCeilingMicros:    Number(row.biddingStrategy?.targetRoas?.cpcBidCeilingMicros ?? 0),
+        inlineTargetRoas:       row.biddingStrategy?.targetRoas?.targetRoas,
+        portfolioCeilingsCount: Object.keys(portfolioCeilings).length,
+        portfolioMatchFound:    !!portfolioMatch,
+        portfolioMatchCeiling:  portfolioMatch?.cpcCeiling ?? null,
+        resolvedFrom:           campaignMicros > 0 ? 'campaign'
+                                : Number(row.biddingStrategy?.targetRoas?.cpcBidCeilingMicros ?? 0) > 0 ? 'inline'
+                                : portfolioMatch?.cpcCeiling ? 'portfolio_lookup'
+                                : manualCeilings[campaignName] ? 'manual'
+                                : 'none',
+      },
     }
   })
 }

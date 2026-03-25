@@ -19,6 +19,7 @@ export interface CampaignMetrics {
   realRoas:                number | null
   recommendation:          Recommendation
   capturedAt?:             string
+  _debug?:                 Record<string, any>
 }
 
 export interface Recommendation {
