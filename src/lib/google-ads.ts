@@ -424,12 +424,44 @@ export async function getCpcDistribution(
     })
   }
 
-  // Stats y distribución desde todos los CPCs
-  const allCpcs: number[] = []
-  for (const d of Object.values(slotMap)) allCpcs.push(...d.avgCpc)
+  // ── Query separada para distribución: keyword×date da clics reales ──
+  // La query temporal (hour/week) solo tiene N slots → clickCount incorrecto.
+  // Con segments.date obtenemos un punto por keyword×día con sus clics reales.
+  const distQuery = `
+    SELECT
+      segments.date,
+      metrics.average_cpc,
+      metrics.clicks
+    FROM keyword_view
+    WHERE campaign.id = ${campaignId}
+      AND segments.date BETWEEN '${dateRange.start}' AND '${dateRange.end}'
+      AND metrics.clicks > 0
+  `
+  let distWeighted: { cpc: number; clicks: number }[] = []
+  try {
+    const distRes = await fetch(
+      `${ADS_API_BASE}/customers/${opts.customerId}/googleAds:search`,
+      { method: 'POST', headers: buildHeaders(opts), body: JSON.stringify({ query: distQuery }) }
+    )
+    if (distRes.ok) {
+      const distData = await distRes.json()
+      for (const row of distData.results ?? []) {
+        const cpc    = Number(row.metrics?.averageCpc ?? 0) / 1e6
+        const clicks = Number(row.metrics?.clicks ?? 0)
+        if (cpc > 0 && clicks > 0) distWeighted.push({ cpc, clicks })
+      }
+    }
+  } catch (_) { /* fallback a datos de slotMap */ }
 
-  const stats = calculateStats(allCpcs)
-  const distribution = generateDistribution(allCpcs, stats.minCpc, stats.maxCpc)
+  // Fallback: si la query por date falla, usar CPCs del slotMap (sin ponderación)
+  if (distWeighted.length === 0) {
+    for (const d of Object.values(slotMap)) {
+      for (const cpc of d.avgCpc) distWeighted.push({ cpc, clicks: 1 })
+    }
+  }
+
+  const stats = calculateStatsWeighted(distWeighted)
+  const distribution = generateDistributionWeighted(distWeighted, stats.minCpc, stats.maxCpc)
 
   // Nombre de campaña
   let campaignName = campaignId
@@ -452,72 +484,63 @@ export async function getCpcDistribution(
     period: { startDate: dateRange.start, endDate: dateRange.end },
     stats: {
       ...stats,
-      totalClicks: Object.values(slotMap).reduce((sum, d) => sum + d.clicks, 0),
+      totalClicks: distWeighted.reduce((sum, d) => sum + d.clicks, 0),
     },
     hourlyData,
     distribution,
   }
 }
 
-// ── Helpers para cálculos estadísticos ────────────────────────────
+// ── Helpers para cálculos estadísticos (ponderados por clics reales) ───
 
-function calculateStats(values: number[]) {
-  if (values.length === 0) {
-    return {
-      minCpc: 0,
-      maxCpc: 0,
-      avgCpc: 0,
-      medianCpc: 0,
-      p10: 0,
-      p25: 0,
-      p75: 0,
-      p90: 0,
-      stdDev: 0,
-    }
+function calculateStatsWeighted(weighted: { cpc: number; clicks: number }[]) {
+  if (weighted.length === 0) {
+    return { minCpc: 0, maxCpc: 0, avgCpc: 0, medianCpc: 0, p10: 0, p25: 0, p75: 0, p90: 0, stdDev: 0 }
   }
 
-  const sorted = values.slice().sort((a, b) => a - b)
-  const min = sorted[0]
-  const max = sorted[sorted.length - 1]
-  const sum = sorted.reduce((a, b) => a + b, 0)
-  const avg = Math.round((sum / sorted.length) * 100) / 100
+  // Expandir a lista ponderada para calcular percentiles (cap a 200 rep para eficiencia)
+  const expanded: number[] = []
+  for (const { cpc, clicks } of weighted) {
+    const reps = Math.min(clicks, 200)
+    for (let i = 0; i < reps; i++) expanded.push(cpc)
+  }
+  expanded.sort((a, b) => a - b)
 
-  // Percentiles
+  const min = expanded[0]
+  const max = expanded[expanded.length - 1]
+  const totalClicks = weighted.reduce((s, d) => s + d.clicks, 0)
+  const avg = totalClicks > 0
+    ? Math.round((weighted.reduce((s, d) => s + d.cpc * d.clicks, 0) / totalClicks) * 100) / 100
+    : 0
+
   const percentile = (p: number) => {
-    const idx = Math.ceil((p / 100) * sorted.length) - 1
-    return Math.round(sorted[Math.max(0, idx)] * 100) / 100
+    const idx = Math.ceil((p / 100) * expanded.length) - 1
+    return Math.round(expanded[Math.max(0, idx)] * 100) / 100
   }
 
-  const median = percentile(50)
-  const p10 = percentile(10)
-  const p25 = percentile(25)
-  const p75 = percentile(75)
-  const p90 = percentile(90)
-
-  // Desviación estándar
-  const variance = sorted.reduce((acc, val) => acc + Math.pow(val - avg, 2), 0) / sorted.length
+  const variance = expanded.reduce((acc, val) => acc + Math.pow(val - avg, 2), 0) / expanded.length
   const stdDev = Math.round(Math.sqrt(variance) * 100) / 100
 
   return {
-    minCpc: Math.round(min * 100) / 100,
-    maxCpc: Math.round(max * 100) / 100,
-    avgCpc: avg,
-    medianCpc: median,
-    p10,
-    p25,
-    p75,
-    p90,
+    minCpc:    Math.round(min * 100) / 100,
+    maxCpc:    Math.round(max * 100) / 100,
+    avgCpc:    avg,
+    medianCpc: percentile(50),
+    p10:       percentile(10),
+    p25:       percentile(25),
+    p75:       percentile(75),
+    p90:       percentile(90),
     stdDev,
   }
 }
 
-function generateDistribution(
-  values: number[],
+function generateDistributionWeighted(
+  weighted: { cpc: number; clicks: number }[],
   minCpc: number,
   maxCpc: number,
   buckets: number = 10
 ) {
-  if (values.length === 0) return []
+  if (weighted.length === 0) return []
 
   const range = maxCpc - minCpc || 0.1
   const bucketSize = range / buckets
@@ -529,19 +552,13 @@ function generateDistribution(
     percentage: 0,
   }))
 
-  // Contar clics en cada rango
-  for (const value of values) {
-    const bucketIdx = Math.min(
-      buckets - 1,
-      Math.floor((value - minCpc) / bucketSize)
-    )
-    if (bucketIdx >= 0 && bucketIdx < buckets) {
-      distribution[bucketIdx].clickCount++
-    }
+  // Sumar clics reales en cada rango de precio
+  for (const { cpc, clicks } of weighted) {
+    const bucketIdx = Math.min(buckets - 1, Math.floor((cpc - minCpc) / bucketSize))
+    if (bucketIdx >= 0) distribution[bucketIdx].clickCount += clicks
   }
 
-  // Calcular porcentajes
-  const total = values.length
+  const total = weighted.reduce((s, d) => s + d.clicks, 0)
   for (const bucket of distribution) {
     bucket.percentage = total > 0 ? Math.round((bucket.clickCount / total) * 1000) / 10 : 0
   }
