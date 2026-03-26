@@ -321,8 +321,6 @@ export async function getCpcDistribution(
   dateRange: { start: string; end: string }
 ): Promise<CpcDistributionData> {
 
-  console.log(`[cpc-dist] START id=${campaignId} range=${dateRange.start}→${dateRange.end}`)
-
   // ── Intento 1: keyword_view con segments.hour_of_day ─────────
   const hourlyQuery = `
     SELECT
@@ -387,7 +385,6 @@ export async function getCpcDistribution(
     }
     const weeklyData = await weeklyRes.json()
     rows = weeklyData.results ?? []
-    console.log(`[cpc-dist] weeklyQuery rows=${rows.length}`)
   } else {
     const hourlyData = await hourlyRes.json()
     rows = hourlyData.results ?? []
@@ -427,8 +424,6 @@ export async function getCpcDistribution(
       cost: d ? Math.round(d.cost * 100) / 100 : 0,
     })
   }
-
-  console.log(`[cpc-dist] hourlyData construido, slots=${slotCount}, iniciando distQuery`)
 
   // ── Query para distribución: campaign×date captura el 100% de clics ──
   // keyword_view omite clics sin keyword explícita (Smart Bidding, broad match, DSA).
