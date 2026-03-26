@@ -424,15 +424,16 @@ export async function getCpcDistribution(
     })
   }
 
-  // ── Query separada para distribución: keyword×date da clics reales ──
-  // La query temporal (hour/week) solo tiene N slots → clickCount incorrecto.
-  // Con segments.date obtenemos un punto por keyword×día con sus clics reales.
+  // ── Query para distribución: campaign×date×hour captura el 100% de clics ──
+  // keyword_view omite clics sin keyword explícita (Smart Bidding, broad match, DSA).
+  // Usando `campaign` con date+hour_of_day obtenemos todos los clics de la campaña.
   const distQuery = `
     SELECT
       segments.date,
+      segments.hour_of_day,
       metrics.average_cpc,
       metrics.clicks
-    FROM keyword_view
+    FROM campaign
     WHERE campaign.id = ${campaignId}
       AND segments.date BETWEEN '${dateRange.start}' AND '${dateRange.end}'
       AND metrics.clicks > 0
@@ -453,7 +454,7 @@ export async function getCpcDistribution(
     }
   } catch (_) { /* fallback a datos de slotMap */ }
 
-  // Fallback: si la query por date falla, usar CPCs del slotMap (sin ponderación)
+  // Fallback: si la query falla, usar CPCs del slotMap (sin ponderación real)
   if (distWeighted.length === 0) {
     for (const d of Object.values(slotMap)) {
       for (const cpc of d.avgCpc) distWeighted.push({ cpc, clicks: 1 })
