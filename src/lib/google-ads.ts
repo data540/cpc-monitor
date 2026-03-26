@@ -428,10 +428,13 @@ export async function getCpcDistribution(
   // keyword_view omite clics sin keyword explícita (Smart Bidding, broad match, DSA).
   // campaign+date: siempre soportado, da totales reales por día.
   // NO combinar con hour_of_day — causa conflicto en la API.
+  // Con Smart Bidding / Target ROAS, average_cpc puede ser 0 aunque hay clics.
+  // Se añade cost_micros para derivar el CPC real como cost/clicks cuando average_cpc = 0.
   const distQuery = `
     SELECT
       segments.date,
       metrics.average_cpc,
+      metrics.cost_micros,
       metrics.clicks
     FROM campaign
     WHERE campaign.id = ${campaignId}
@@ -446,26 +449,33 @@ export async function getCpcDistribution(
     )
     if (distRes.ok) {
       const distData = await distRes.json()
-      for (const row of distData.results ?? []) {
-        const cpc    = Number(row.metrics?.averageCpc ?? 0) / 1e6
-        const clicks = Number(row.metrics?.clicks ?? 0)
-        if (cpc > 0 && clicks > 0) distWeighted.push({ cpc, clicks })
+      const results = distData.results ?? []
+      for (const row of results) {
+        const avgCpc     = Number(row.metrics?.averageCpc  ?? 0) / 1e6
+        const costMicros = Number(row.metrics?.costMicros  ?? 0)
+        const clicks     = Number(row.metrics?.clicks      ?? 0)
+        // Derivar CPC real desde cost/clicks si average_cpc = 0 (Smart Bidding)
+        const cpc = avgCpc > 0 ? avgCpc : (clicks > 0 ? costMicros / (clicks * 1e6) : 0)
+        if (clicks > 0 && cpc > 0) distWeighted.push({ cpc, clicks })
       }
+      const totalClicksDist = distWeighted.reduce((s, d) => s + d.clicks, 0)
+      console.log(`[cpc-dist] id=${campaignId} range=${dateRange.start}→${dateRange.end} rows=${results.length} totalClicks=${totalClicksDist}`)
     } else {
       const errText = await distRes.text()
-      console.warn('[cpc-distribution] distQuery error:', distRes.status, errText)
+      console.warn('[cpc-dist] distQuery error:', distRes.status, errText.slice(0, 300))
     }
   } catch (e) {
-    console.warn('[cpc-distribution] distQuery exception, using fallback:', e)
+    console.warn('[cpc-dist] distQuery exception:', e)
   }
 
-  // Fallback: si la query falla, usar clics reales del slotMap (mejor que clicks:1)
+  // Fallback: si distWeighted sigue vacío, usar slotMap con CPC derivado de cost/clicks
   if (distWeighted.length === 0) {
+    console.warn('[cpc-dist] distWeighted vacío, usando fallback slotMap')
     for (const d of Object.values(slotMap)) {
-      const avgCpc = d.avgCpc.length > 0
-        ? d.avgCpc.reduce((a, b) => a + b, 0) / d.avgCpc.length
-        : 0
-      if (avgCpc > 0 && d.clicks > 0) distWeighted.push({ cpc: avgCpc, clicks: d.clicks })
+      const avgCpc      = d.avgCpc.length > 0 ? d.avgCpc.reduce((a, b) => a + b, 0) / d.avgCpc.length : 0
+      const cpcFromCost = d.clicks > 0 ? d.cost / d.clicks : 0
+      const cpc         = avgCpc > 0 ? avgCpc : cpcFromCost
+      if (cpc > 0 && d.clicks > 0) distWeighted.push({ cpc, clicks: d.clicks })
     }
   }
 
