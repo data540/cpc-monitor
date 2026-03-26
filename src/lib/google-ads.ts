@@ -424,13 +424,13 @@ export async function getCpcDistribution(
     })
   }
 
-  // ── Query para distribución: campaign×date×hour captura el 100% de clics ──
+  // ── Query para distribución: campaign×date captura el 100% de clics ──
   // keyword_view omite clics sin keyword explícita (Smart Bidding, broad match, DSA).
-  // Usando `campaign` con date+hour_of_day obtenemos todos los clics de la campaña.
+  // campaign+date: siempre soportado, da totales reales por día.
+  // NO combinar con hour_of_day — causa conflicto en la API.
   const distQuery = `
     SELECT
       segments.date,
-      segments.hour_of_day,
       metrics.average_cpc,
       metrics.clicks
     FROM campaign
@@ -451,13 +451,21 @@ export async function getCpcDistribution(
         const clicks = Number(row.metrics?.clicks ?? 0)
         if (cpc > 0 && clicks > 0) distWeighted.push({ cpc, clicks })
       }
+    } else {
+      const errText = await distRes.text()
+      console.warn('[cpc-distribution] distQuery error:', distRes.status, errText)
     }
-  } catch (_) { /* fallback a datos de slotMap */ }
+  } catch (e) {
+    console.warn('[cpc-distribution] distQuery exception, using fallback:', e)
+  }
 
-  // Fallback: si la query falla, usar CPCs del slotMap (sin ponderación real)
+  // Fallback: si la query falla, usar clics reales del slotMap (mejor que clicks:1)
   if (distWeighted.length === 0) {
     for (const d of Object.values(slotMap)) {
-      for (const cpc of d.avgCpc) distWeighted.push({ cpc, clicks: 1 })
+      const avgCpc = d.avgCpc.length > 0
+        ? d.avgCpc.reduce((a, b) => a + b, 0) / d.avgCpc.length
+        : 0
+      if (avgCpc > 0 && d.clicks > 0) distWeighted.push({ cpc: avgCpc, clicks: d.clicks })
     }
   }
 
