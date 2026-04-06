@@ -58,6 +58,15 @@ export async function getValidAccessToken(userId: string): Promise<string> {
     orderBy: { expires_at: 'desc' },
   })
 
+  const nowSecs = Math.floor(Date.now() / 1000)
+  console.log('[refresh-token] google account:', {
+    found: !!googleAccount,
+    hasAccessToken: !!googleAccount?.access_token,
+    hasRefreshToken: !!googleAccount?.refresh_token,
+    expiresAt: googleAccount?.expires_at,
+    expiresIn: googleAccount?.expires_at ? googleAccount.expires_at - nowSecs : null,
+  })
+
   if (!googleAccount?.access_token) {
     throw new Error('Token de Google no encontrado. Vuelve a hacer login.')
   }
