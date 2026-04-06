@@ -4,26 +4,15 @@
 
 import { prisma } from './prisma'
 
-export async function getValidAccessToken(userId: string): Promise<string> {
-  // Buscar primero el token específico de Google Ads, luego el de login general
-  const account =
-    (await prisma.account.findFirst({ where: { userId, provider: 'google-ads' } })) ??
-    (await prisma.account.findFirst({ where: { userId, provider: 'google' }, orderBy: { expires_at: 'desc' } }))
-
-  if (!account?.access_token) {
-    throw new Error('Token de Google no encontrado. Vuelve a hacer login.')
-  }
-
-  // Si el token no ha caducado (con 60s de margen), devolver directamente
+async function refreshAccount(account: { id: string; access_token: string | null; refresh_token: string | null; expires_at: number | null }): Promise<string | null> {
   const nowSecs = Math.floor(Date.now() / 1000)
-  if (account.expires_at && account.expires_at > nowSecs + 60) {
+
+  // Token aún válido
+  if (account.access_token && account.expires_at && account.expires_at > nowSecs + 60) {
     return account.access_token
   }
 
-  // Token caducado — usar refresh_token para obtener uno nuevo
-  if (!account.refresh_token) {
-    throw new Error('Sesión caducada y sin refresh token. Vuelve a hacer login.')
-  }
+  if (!account.refresh_token) return null
 
   const res = await fetch('https://oauth2.googleapis.com/token', {
     method: 'POST',
@@ -36,15 +25,11 @@ export async function getValidAccessToken(userId: string): Promise<string> {
     }),
   })
 
-  if (!res.ok) {
-    const err = await res.text()
-    throw new Error(`Error al refrescar token: ${err}. Vuelve a hacer login.`)
-  }
+  if (!res.ok) return null  // token revocado o inválido → probar siguiente
 
   const tokens = await res.json()
   const newExpiresAt = Math.floor(Date.now() / 1000) + (tokens.expires_in ?? 3600)
 
-  // Guardar el nuevo token en BD
   await prisma.account.update({
     where: { id: account.id },
     data: {
@@ -55,4 +40,32 @@ export async function getValidAccessToken(userId: string): Promise<string> {
   })
 
   return tokens.access_token
+}
+
+export async function getValidAccessToken(userId: string): Promise<string> {
+  // Intentar primero con el token específico de Google Ads
+  const adsAccount = await prisma.account.findFirst({ where: { userId, provider: 'google-ads' } })
+  if (adsAccount) {
+    const token = await refreshAccount(adsAccount)
+    if (token) return token
+    // Si falló (token revocado), caer al login general
+    console.warn('[refresh-token] google-ads token inválido, intentando con google')
+  }
+
+  // Fallback: token del login general con Google
+  const googleAccount = await prisma.account.findFirst({
+    where: { userId, provider: 'google' },
+    orderBy: { expires_at: 'desc' },
+  })
+
+  if (!googleAccount?.access_token) {
+    throw new Error('Token de Google no encontrado. Vuelve a hacer login.')
+  }
+
+  const token = await refreshAccount(googleAccount)
+  if (!token) {
+    throw new Error('Sesión caducada. Vuelve a hacer login.')
+  }
+
+  return token
 }
