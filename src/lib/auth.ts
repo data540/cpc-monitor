@@ -27,6 +27,41 @@ export const authOptions: NextAuthOptions = {
   ],
 
   callbacks: {
+    async signIn({ user, account }) {
+      // Persistir tokens en BD — el PrismaAdapter no los actualiza en logins sucesivos
+      if (account && user?.id && account.access_token) {
+        try {
+          await prisma.account.upsert({
+            where: {
+              provider_providerAccountId: {
+                provider:          account.provider,
+                providerAccountId: account.providerAccountId,
+              },
+            },
+            update: {
+              access_token: account.access_token,
+              expires_at:   account.expires_at ?? null,
+              ...(account.refresh_token ? { refresh_token: account.refresh_token } : {}),
+            },
+            create: {
+              userId:            user.id,
+              type:              account.type,
+              provider:          account.provider,
+              providerAccountId: account.providerAccountId,
+              access_token:      account.access_token,
+              refresh_token:     account.refresh_token ?? null,
+              expires_at:        account.expires_at ?? null,
+              token_type:        account.token_type ?? null,
+              scope:             account.scope ?? null,
+              id_token:          account.id_token ?? null,
+            },
+          })
+        } catch {
+          // El login continúa aunque falle el upsert
+        }
+      }
+      return true
+    },
     async redirect({ url, baseUrl }) {
       return url.startsWith(baseUrl) ? url : baseUrl + '/dashboard'
     },

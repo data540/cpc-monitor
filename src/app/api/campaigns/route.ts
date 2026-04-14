@@ -25,6 +25,9 @@ export async function GET(request: Request) {
   try {
     accessToken = await getValidAccessToken(userId)
   } catch (e: any) {
+    if (e.name === 'REAUTH_REQUIRED') {
+      return NextResponse.json({ error: 'Sesión de Google Ads expirada. Vuelve a conectar tu cuenta.', reauth: true }, { status: 401 })
+    }
     return NextResponse.json({ error: e.message }, { status: 401 })
   }
 

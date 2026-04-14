@@ -58,6 +58,7 @@ export function DashboardClient({ user }: Props) {
   const [metrics,          setMetrics]          = useState<CampaignMetrics[]>([])
   const [loading,          setLoading]          = useState(false)
   const [error,            setError]            = useState<string | null>(null)
+  const [needsReauth,      setNeedsReauth]      = useState(false)
   const [lastUpdate,       setLastUpdate]       = useState<Date | null>(null)
   const [customerId,       setCustomerId]       = useState(DEFAULT_CUSTOMER_ID)
   const [inputId,          setInputId]          = useState(DEFAULT_CUSTOMER_ID)
@@ -67,11 +68,14 @@ export function DashboardClient({ user }: Props) {
   const fetchMetrics = useCallback(async (cid: string) => {
     if (!isValidCustomerId(cid)) return
     const normalizedCid = normalizeCustomerId(cid)
-    setLoading(true); setError(null)
+    setLoading(true); setError(null); setNeedsReauth(false)
     try {
       const res  = await fetch(`/api/campaigns?customerId=${normalizedCid}`)
       const data = await res.json()
-      if (!res.ok) throw new Error(data.error ?? 'Error desconocido')
+      if (!res.ok) {
+        if (data.reauth) setNeedsReauth(true)
+        throw new Error(data.error ?? 'Error desconocido')
+      }
       setMetrics(data.metrics)
       setLastUpdate(new Date())
     } catch (e: any) {
@@ -184,8 +188,16 @@ export function DashboardClient({ user }: Props) {
             <main className="px-6 py-6 flex-1">
 
               {error && (
-                <div className="mb-5 bg-red-dim border border-red-DEFAULT/30 rounded px-4 py-3 text-sm text-red-DEFAULT">
-                  <span className="font-medium num tracking-wider">ERROR: </span>{error}
+                <div className="mb-5 bg-red-dim border border-red-DEFAULT/30 rounded px-4 py-3 text-sm text-red-DEFAULT flex items-center justify-between gap-4">
+                  <span><span className="font-medium num tracking-wider">ERROR: </span>{error}</span>
+                  {needsReauth && (
+                    <a
+                      href="/api/auth/google-ads"
+                      className="num text-[10px] shrink-0 px-3 py-1.5 rounded border border-red-DEFAULT/50 text-red-DEFAULT hover:bg-red-DEFAULT/10 transition-colors tracking-widest uppercase whitespace-nowrap"
+                    >
+                      Reconectar cuenta
+                    </a>
+                  )}
                 </div>
               )}
 

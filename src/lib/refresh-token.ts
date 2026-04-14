@@ -37,8 +37,21 @@ export async function getValidAccessToken(userId: string): Promise<string> {
   })
 
   if (!res.ok) {
-    const err = await res.text()
-    throw new Error(`Error al refrescar token: ${err}. Vuelve a hacer login.`)
+    const errBody = await res.json().catch(() => ({ error: 'unknown' }))
+
+    // Si el refresh_token fue revocado o expiró, eliminarlo de la BD para
+    // forzar que el usuario vuelva a autorizarse desde cero.
+    if (errBody.error === 'invalid_grant') {
+      await prisma.account.update({
+        where: { id: account.id },
+        data: { refresh_token: null, access_token: null, expires_at: null },
+      })
+      const reauthError = new Error('REAUTH_REQUIRED')
+      reauthError.name = 'REAUTH_REQUIRED'
+      throw reauthError
+    }
+
+    throw new Error(`Error al refrescar token: ${JSON.stringify(errBody)}. Vuelve a hacer login.`)
   }
 
   const tokens = await res.json()
