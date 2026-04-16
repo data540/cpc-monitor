@@ -130,12 +130,23 @@ export function AppSidebar({
         >
           {loading ? '↻ Cargando...' : '↻ Actualizar'}
         </button>
-        <button
-          onClick={() => signOut({ callbackUrl: '/login' })}
-          className="num text-[10px] w-full py-1 text-[#888] hover:text-[#ccc] transition-colors tracking-wider"
-        >
-          Cerrar sesión
-        </button>
+        <div className="flex items-center gap-2">
+          <button
+            onClick={() => signOut({ callbackUrl: '/login' })}
+            className="num text-[10px] flex-1 py-1 text-[#888] hover:text-[#ccc] transition-colors tracking-wider"
+          >
+            Cerrar sesión
+          </button>
+          <a
+            href="/help.html"
+            target="_blank"
+            rel="noopener noreferrer"
+            title="Ayuda — Guía de la aplicación"
+            className="w-6 h-6 rounded-full border border-[#333] text-[#888] hover:text-cyan-DEFAULT hover:border-cyan-DEFAULT/50 transition-colors flex items-center justify-center num text-[11px] font-bold flex-shrink-0"
+          >
+            ?
+          </a>
+        </div>
       </div>
     </aside>
   )

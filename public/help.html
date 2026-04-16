@@ -1,0 +1,1042 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>CPC Monitor — Ayuda</title>
+  <style>
+    :root {
+      --bg:        #0d0d0d;
+      --surface:   #111111;
+      --border:    #1e1e1e;
+      --hover:     #161616;
+      --cyan:      #00e5ff;
+      --cyan-dim:  rgba(0,229,255,0.08);
+      --cyan-mid:  rgba(0,229,255,0.18);
+      --green:     #00e676;
+      --amber:     #ffab40;
+      --red:       #ff5252;
+      --purple:    #ce93d8;
+      --text-1:    #e8e8e8;
+      --text-2:    #888;
+      --text-3:    #555;
+      --radius:    8px;
+    }
+
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      background: var(--bg);
+      color: var(--text-1);
+      font-family: 'JetBrains Mono', 'Fira Code', 'Consolas', monospace;
+      font-size: 13px;
+      line-height: 1.6;
+      display: flex;
+      min-height: 100vh;
+    }
+
+    /* ── Sidebar ── */
+    .sidebar {
+      width: 220px;
+      min-height: 100vh;
+      background: var(--surface);
+      border-right: 1px solid var(--border);
+      position: fixed;
+      top: 0; left: 0;
+      display: flex;
+      flex-direction: column;
+      z-index: 10;
+    }
+
+    .sidebar-logo {
+      padding: 20px;
+      border-bottom: 1px solid var(--border);
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+
+    .logo-icon {
+      width: 28px; height: 28px;
+      background: var(--cyan-mid);
+      border: 1px solid var(--cyan);
+      border-radius: 6px;
+      display: flex; align-items: center; justify-content: center;
+      font-size: 14px;
+    }
+
+    .logo-name {
+      font-size: 11px;
+      font-weight: 700;
+      color: var(--cyan);
+      letter-spacing: 0.15em;
+    }
+
+    .logo-ver {
+      font-size: 9px;
+      color: var(--text-3);
+      letter-spacing: 0.1em;
+      margin-top: 2px;
+    }
+
+    .sidebar-nav {
+      flex: 1;
+      padding: 16px 12px;
+      overflow-y: auto;
+    }
+
+    .nav-section {
+      font-size: 9px;
+      color: var(--text-3);
+      letter-spacing: 0.2em;
+      text-transform: uppercase;
+      padding: 0 12px;
+      margin-bottom: 6px;
+      margin-top: 12px;
+    }
+
+    .nav-item {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 8px 12px;
+      border-radius: 6px;
+      border-left: 2px solid transparent;
+      font-size: 11px;
+      font-weight: 500;
+      letter-spacing: 0.1em;
+      text-transform: uppercase;
+      color: var(--text-2);
+      cursor: pointer;
+      transition: all 0.15s;
+      text-decoration: none;
+    }
+
+    .nav-item:hover,
+    .nav-item.active {
+      background: var(--cyan-dim);
+      color: var(--cyan);
+      border-left-color: var(--cyan);
+    }
+
+    /* ── Main content ── */
+    .main {
+      margin-left: 220px;
+      flex: 1;
+      padding: 40px 48px;
+      max-width: 960px;
+    }
+
+    /* ── Hero ── */
+    .hero {
+      margin-bottom: 48px;
+      padding-bottom: 32px;
+      border-bottom: 1px solid var(--border);
+    }
+
+    .hero-tag {
+      display: inline-block;
+      font-size: 9px;
+      letter-spacing: 0.2em;
+      text-transform: uppercase;
+      color: var(--cyan);
+      background: var(--cyan-dim);
+      border: 1px solid rgba(0,229,255,0.2);
+      border-radius: 4px;
+      padding: 4px 10px;
+      margin-bottom: 16px;
+    }
+
+    .hero h1 {
+      font-size: 28px;
+      font-weight: 700;
+      color: var(--text-1);
+      letter-spacing: 0.02em;
+      line-height: 1.2;
+      margin-bottom: 12px;
+    }
+
+    .hero h1 span { color: var(--cyan); }
+
+    .hero p {
+      color: var(--text-2);
+      font-size: 13px;
+      max-width: 600px;
+      line-height: 1.7;
+    }
+
+    /* ── Section titles ── */
+    .section {
+      margin-bottom: 48px;
+      scroll-margin-top: 24px;
+    }
+
+    .section-header {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      margin-bottom: 20px;
+    }
+
+    .section-icon {
+      width: 36px; height: 36px;
+      border-radius: var(--radius);
+      display: flex; align-items: center; justify-content: center;
+      font-size: 16px;
+      flex-shrink: 0;
+    }
+
+    .section-icon.cyan   { background: var(--cyan-dim);              border: 1px solid rgba(0,229,255,0.2); }
+    .section-icon.green  { background: rgba(0,230,118,0.08);         border: 1px solid rgba(0,230,118,0.2); }
+    .section-icon.amber  { background: rgba(255,171,64,0.08);        border: 1px solid rgba(255,171,64,0.2); }
+    .section-icon.red    { background: rgba(255,82,82,0.08);         border: 1px solid rgba(255,82,82,0.2); }
+    .section-icon.purple { background: rgba(206,147,216,0.08);       border: 1px solid rgba(206,147,216,0.2); }
+    .section-icon.blue   { background: rgba(100,181,246,0.08);       border: 1px solid rgba(100,181,246,0.2); }
+
+    .section-title {
+      font-size: 16px;
+      font-weight: 700;
+      color: var(--text-1);
+      letter-spacing: 0.05em;
+    }
+
+    .section-route {
+      font-size: 10px;
+      color: var(--text-3);
+      letter-spacing: 0.1em;
+      margin-top: 2px;
+    }
+
+    /* ── Cards grid ── */
+    .cards-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+      gap: 12px;
+      margin-bottom: 20px;
+    }
+
+    .kpi-card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 16px;
+    }
+
+    .kpi-label {
+      font-size: 9px;
+      color: var(--text-3);
+      letter-spacing: 0.2em;
+      text-transform: uppercase;
+      margin-bottom: 8px;
+    }
+
+    .kpi-value {
+      font-size: 20px;
+      font-weight: 700;
+      color: var(--cyan);
+    }
+
+    .kpi-value.green  { color: var(--green); }
+    .kpi-value.amber  { color: var(--amber); }
+    .kpi-value.red    { color: var(--red); }
+    .kpi-value.purple { color: var(--purple); }
+
+    .kpi-sub {
+      font-size: 10px;
+      color: var(--text-3);
+      margin-top: 4px;
+    }
+
+    /* ── Feature list ── */
+    .feature-list {
+      list-style: none;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      margin-bottom: 20px;
+    }
+
+    .feature-list li {
+      display: flex;
+      align-items: flex-start;
+      gap: 10px;
+      padding: 10px 14px;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      font-size: 12px;
+      color: var(--text-2);
+      line-height: 1.5;
+    }
+
+    .feature-list li .fi {
+      font-size: 14px;
+      margin-top: 1px;
+      flex-shrink: 0;
+    }
+
+    /* ── Table ── */
+    .help-table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 12px;
+      margin-bottom: 20px;
+    }
+
+    .help-table th {
+      text-align: left;
+      font-size: 9px;
+      letter-spacing: 0.2em;
+      text-transform: uppercase;
+      color: var(--text-3);
+      border-bottom: 1px solid var(--border);
+      padding: 8px 12px;
+    }
+
+    .help-table td {
+      padding: 10px 12px;
+      border-bottom: 1px solid var(--border);
+      color: var(--text-2);
+    }
+
+    .help-table tr:last-child td { border-bottom: none; }
+    .help-table tr:hover td { background: var(--hover); }
+
+    .help-table td:first-child { color: var(--text-1); font-weight: 600; }
+
+    /* ── Badges ── */
+    .badge {
+      display: inline-block;
+      font-size: 9px;
+      font-weight: 700;
+      letter-spacing: 0.1em;
+      text-transform: uppercase;
+      border-radius: 4px;
+      padding: 2px 8px;
+    }
+
+    .badge-red    { background: rgba(255,82,82,0.15);   color: var(--red);    border: 1px solid rgba(255,82,82,0.3); }
+    .badge-amber  { background: rgba(255,171,64,0.15);  color: var(--amber);  border: 1px solid rgba(255,171,64,0.3); }
+    .badge-green  { background: rgba(0,230,118,0.12);   color: var(--green);  border: 1px solid rgba(0,230,118,0.25); }
+    .badge-cyan   { background: var(--cyan-dim);        color: var(--cyan);   border: 1px solid rgba(0,229,255,0.2); }
+    .badge-purple { background: rgba(206,147,216,0.12); color: var(--purple); border: 1px solid rgba(206,147,216,0.25); }
+    .badge-grey   { background: rgba(255,255,255,0.05); color: var(--text-3); border: 1px solid var(--border); }
+
+    /* ── Progress bars (demo) ── */
+    .bar-demo {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 16px;
+      margin-bottom: 12px;
+    }
+
+    .bar-row {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      margin-bottom: 10px;
+    }
+
+    .bar-row:last-child { margin-bottom: 0; }
+
+    .bar-label {
+      width: 140px;
+      font-size: 11px;
+      color: var(--text-2);
+      flex-shrink: 0;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .bar-track {
+      flex: 1;
+      height: 6px;
+      background: var(--border);
+      border-radius: 3px;
+      overflow: hidden;
+    }
+
+    .bar-fill {
+      height: 100%;
+      border-radius: 3px;
+      transition: width 0.6s ease;
+    }
+
+    .bar-fill.cyan   { background: var(--cyan); }
+    .bar-fill.green  { background: var(--green); }
+    .bar-fill.amber  { background: var(--amber); }
+    .bar-fill.red    { background: var(--red); }
+
+    .bar-pct {
+      width: 40px;
+      font-size: 11px;
+      color: var(--text-3);
+      text-align: right;
+      flex-shrink: 0;
+    }
+
+    /* ── Stacked bar demo ── */
+    .stacked-demo {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 16px;
+      margin-bottom: 20px;
+    }
+
+    .stacked-row {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      margin-bottom: 10px;
+    }
+
+    .stacked-row:last-child { margin-bottom: 0; }
+
+    .stacked-bar {
+      flex: 1;
+      height: 16px;
+      border-radius: 4px;
+      overflow: hidden;
+      display: flex;
+    }
+
+    .stacked-seg {
+      height: 100%;
+      transition: width 0.6s ease;
+    }
+
+    /* ── Alert cards ── */
+    .alert-card {
+      display: flex;
+      align-items: flex-start;
+      gap: 12px;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 14px 16px;
+      margin-bottom: 8px;
+    }
+
+    .alert-icon {
+      width: 32px; height: 32px;
+      border-radius: 6px;
+      display: flex; align-items: center; justify-content: center;
+      font-size: 14px;
+      flex-shrink: 0;
+    }
+
+    .alert-icon.red    { background: rgba(255,82,82,0.12);   border: 1px solid rgba(255,82,82,0.25); }
+    .alert-icon.amber  { background: rgba(255,171,64,0.12);  border: 1px solid rgba(255,171,64,0.25); }
+    .alert-icon.blue   { background: rgba(100,181,246,0.12); border: 1px solid rgba(100,181,246,0.25); }
+
+    .alert-title {
+      font-size: 12px;
+      font-weight: 700;
+      color: var(--text-1);
+      margin-bottom: 3px;
+    }
+
+    .alert-desc {
+      font-size: 11px;
+      color: var(--text-2);
+    }
+
+    /* ── Divider ── */
+    .divider {
+      border: none;
+      border-top: 1px solid var(--border);
+      margin: 40px 0;
+    }
+
+    /* ── Flow diagram ── */
+    .flow {
+      display: flex;
+      align-items: center;
+      gap: 0;
+      flex-wrap: wrap;
+      margin-bottom: 20px;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 20px;
+    }
+
+    .flow-box {
+      background: var(--hover);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      padding: 8px 14px;
+      font-size: 11px;
+      color: var(--text-1);
+      letter-spacing: 0.05em;
+      text-align: center;
+    }
+
+    .flow-box.highlight {
+      border-color: rgba(0,229,255,0.3);
+      color: var(--cyan);
+      background: var(--cyan-dim);
+    }
+
+    .flow-arrow {
+      color: var(--text-3);
+      font-size: 18px;
+      padding: 0 8px;
+    }
+
+    /* ── Scrollspy active ── */
+    .nav-item.active-spy {
+      background: var(--cyan-dim);
+      color: var(--cyan);
+      border-left-color: var(--cyan);
+    }
+
+    /* ── Responsive ── */
+    @media (max-width: 768px) {
+      .sidebar { display: none; }
+      .main { margin-left: 0; padding: 20px; }
+    }
+  </style>
+</head>
+<body>
+
+  <!-- Sidebar -->
+  <aside class="sidebar">
+    <div class="sidebar-logo">
+      <div class="logo-icon">⬡</div>
+      <div>
+        <div class="logo-name">CPC_MONITOR</div>
+        <div class="logo-ver">HELP_GUIDE</div>
+      </div>
+    </div>
+    <nav class="sidebar-nav">
+
+      <div class="nav-section">Inicio</div>
+      <a class="nav-item active" href="#inicio" onclick="setActive(this)">▦ Overview general</a>
+
+      <div class="nav-section">Workspace</div>
+      <a class="nav-item" href="#overview" onclick="setActive(this)">▦ Overview</a>
+      <a class="nav-item" href="#campaigns" onclick="setActive(this)">⊞ Campaigns</a>
+
+      <div class="nav-section">Analytics</div>
+      <a class="nav-item" href="#is-monitor" onclick="setActive(this)">◎ IS Monitor</a>
+      <a class="nav-item" href="#cpc-analysis" onclick="setActive(this)">💰 CPC Analysis</a>
+      <a class="nav-item" href="#roas-tracker" onclick="setActive(this)">🎯 ROAS Tracker</a>
+      <a class="nav-item" href="#auction-insights" onclick="setActive(this)">📉 Auction Insights</a>
+
+      <div class="nav-section">System</div>
+      <a class="nav-item" href="#alerts" onclick="setActive(this)">🔔 Alerts</a>
+      <a class="nav-item" href="#reports" onclick="setActive(this)">📅 Reports</a>
+      <a class="nav-item" href="#config" onclick="setActive(this)">⚙ Config</a>
+
+      <div class="nav-section">Técnico</div>
+      <a class="nav-item" href="#flujo" onclick="setActive(this)">⟳ Flujo de datos</a>
+    </nav>
+  </aside>
+
+  <!-- Main -->
+  <main class="main">
+
+    <!-- Hero -->
+    <div class="hero" id="inicio">
+      <div class="hero-tag">Documentación v0.2</div>
+      <h1>CPC <span>Monitor</span></h1>
+      <p>Dashboard de monitorización en tiempo real para campañas de Google Ads con estrategia <strong style="color:var(--text-1)">Target ROAS</strong>. Controla el CPC ceiling, el Impression Share, el ROAS real y la presencia competitiva en la subasta desde un único panel.</p>
+    </div>
+
+    <!-- ──────────────── OVERVIEW ──────────────── -->
+    <section class="section" id="overview">
+      <div class="section-header">
+        <div class="section-icon cyan">▦</div>
+        <div>
+          <div class="section-title">Overview</div>
+          <div class="section-route">/dashboard</div>
+        </div>
+      </div>
+
+      <p style="color:var(--text-2);margin-bottom:16px">Panel principal con vista global de todas las campañas activas. El punto de entrada para revisar el estado general de la cuenta.</p>
+
+      <div class="cards-grid">
+        <div class="kpi-card">
+          <div class="kpi-label">Campañas</div>
+          <div class="kpi-value">12</div>
+          <div class="kpi-sub">3 con alertas activas</div>
+        </div>
+        <div class="kpi-card">
+          <div class="kpi-label">Clics Totales</div>
+          <div class="kpi-value green">48.320</div>
+          <div class="kpi-sub">Últimos 30 días</div>
+        </div>
+        <div class="kpi-card">
+          <div class="kpi-label">Coste Total</div>
+          <div class="kpi-value amber">9.252 €</div>
+          <div class="kpi-sub">Período seleccionado</div>
+        </div>
+        <div class="kpi-card">
+          <div class="kpi-label">IS Medio</div>
+          <div class="kpi-value">74.3%</div>
+          <div class="kpi-sub">Impression Share promedio</div>
+        </div>
+      </div>
+
+      <ul class="feature-list">
+        <li><span class="fi">📋</span><span><strong style="color:var(--text-1)">Tabla de campañas:</strong> Muestra CPC techo, CPC actual, uso del techo en %, clics, coste, CTR, IS y ROAS con badge de estado por campaña.</span></li>
+        <li><span class="fi">🔍</span><span><strong style="color:var(--text-1)">Vista expandible:</strong> Al hacer clic en una campaña se abre un panel lateral con historial de 30 días y recomendación automática del sistema.</span></li>
+        <li><span class="fi">↺</span><span><strong style="color:var(--text-1)">Auto-refresh:</strong> Los datos se actualizan automáticamente cada 6 horas. También puedes forzar actualización con el botón del menú.</span></li>
+        <li><span class="fi">🪪</span><span><strong style="color:var(--text-1)">Cambio de cuenta:</strong> Introduce el Customer ID (10 dígitos) en el campo del menú lateral y pulsa Cargar para cambiar de cuenta.</span></li>
+      </ul>
+    </section>
+
+    <hr class="divider" />
+
+    <!-- ──────────────── CAMPAIGNS ──────────────── -->
+    <section class="section" id="campaigns">
+      <div class="section-header">
+        <div class="section-icon cyan">⊞</div>
+        <div>
+          <div class="section-title">Campaigns</div>
+          <div class="section-route">/dashboard (vista grid)</div>
+        </div>
+      </div>
+
+      <p style="color:var(--text-2);margin-bottom:16px">Vista alternativa del Overview en formato de tarjetas (grid). Las mismas campañas presentadas de forma más visual y compacta, ideal para una revisión rápida.</p>
+
+      <ul class="feature-list">
+        <li><span class="fi">🃏</span><span>Tarjetas individuales por campaña con las métricas clave y código de color por estado</span></li>
+        <li><span class="fi">🎨</span><span>Indicadores visuales de alerta: borde rojo (ALERT), ámbar (WARN) o sin resalte (OK)</span></li>
+        <li><span class="fi">🔀</span><span>Alterna entre vista tabla y vista grid desde los botones en la cabecera del dashboard</span></li>
+      </ul>
+    </section>
+
+    <hr class="divider" />
+
+    <!-- ──────────────── IS MONITOR ──────────────── -->
+    <section class="section" id="is-monitor">
+      <div class="section-header">
+        <div class="section-icon cyan">◎</div>
+        <div>
+          <div class="section-title">IS Monitor</div>
+          <div class="section-route">/dashboard/is-monitor</div>
+        </div>
+      </div>
+
+      <p style="color:var(--text-2);margin-bottom:16px">Analiza la cuota de impresiones (Impression Share) de cada campaña. Diagnostica si se pierde visibilidad por <strong style="color:var(--amber)">presupuesto insuficiente</strong> o por <strong style="color:var(--red)">ranking bajo</strong>.</p>
+
+      <div class="cards-grid">
+        <div class="kpi-card">
+          <div class="kpi-label">IS Medio</div>
+          <div class="kpi-value">74.3%</div>
+          <div class="kpi-sub">Cuota de impresiones capturada</div>
+        </div>
+        <div class="kpi-card">
+          <div class="kpi-label">Perdido — Presupuesto</div>
+          <div class="kpi-value amber">12.4%</div>
+          <div class="kpi-sub">Por falta de budget</div>
+        </div>
+        <div class="kpi-card">
+          <div class="kpi-label">Perdido — Ranking</div>
+          <div class="kpi-value red">13.3%</div>
+          <div class="kpi-sub">Por puja / Quality Score bajo</div>
+        </div>
+        <div class="kpi-card">
+          <div class="kpi-label">Campañas en Alerta</div>
+          <div class="kpi-value red">3</div>
+          <div class="kpi-sub">IS < 50% o Lost > 30%</div>
+        </div>
+      </div>
+
+      <!-- Stacked bar demo -->
+      <div class="stacked-demo">
+        <p style="font-size:9px;color:var(--text-3);letter-spacing:0.15em;text-transform:uppercase;margin-bottom:12px">Desglose IS por campaña</p>
+        <div class="stacked-row">
+          <div class="bar-label">Brand — Exact</div>
+          <div class="stacked-bar">
+            <div class="stacked-seg" style="width:82%;background:var(--cyan);opacity:0.8"></div>
+            <div class="stacked-seg" style="width:5%;background:var(--amber);opacity:0.7"></div>
+            <div class="stacked-seg" style="width:13%;background:var(--red);opacity:0.6"></div>
+          </div>
+          <span class="bar-pct">82%</span>
+        </div>
+        <div class="stacked-row">
+          <div class="bar-label">Competencia — BMM</div>
+          <div class="stacked-bar">
+            <div class="stacked-seg" style="width:41%;background:var(--cyan);opacity:0.8"></div>
+            <div class="stacked-seg" style="width:12%;background:var(--amber);opacity:0.7"></div>
+            <div class="stacked-seg" style="width:47%;background:var(--red);opacity:0.6"></div>
+          </div>
+          <span class="bar-pct">41%</span>
+        </div>
+        <div class="stacked-row">
+          <div class="bar-label">Genérico — Amplia</div>
+          <div class="stacked-bar">
+            <div class="stacked-seg" style="width:67%;background:var(--cyan);opacity:0.8"></div>
+            <div class="stacked-seg" style="width:28%;background:var(--amber);opacity:0.7"></div>
+            <div class="stacked-seg" style="width:5%;background:var(--red);opacity:0.6"></div>
+          </div>
+          <span class="bar-pct">67%</span>
+        </div>
+        <div style="display:flex;gap:16px;margin-top:14px">
+          <span style="display:flex;align-items:center;gap:6px;font-size:10px;color:var(--text-3)"><span style="width:10px;height:10px;border-radius:2px;background:var(--cyan);display:inline-block"></span>IS Real</span>
+          <span style="display:flex;align-items:center;gap:6px;font-size:10px;color:var(--text-3)"><span style="width:10px;height:10px;border-radius:2px;background:var(--amber);display:inline-block"></span>Lost Budget</span>
+          <span style="display:flex;align-items:center;gap:6px;font-size:10px;color:var(--text-3)"><span style="width:10px;height:10px;border-radius:2px;background:var(--red);display:inline-block"></span>Lost Rank</span>
+        </div>
+      </div>
+
+      <table class="help-table">
+        <thead><tr><th>Métrica</th><th>Significado</th><th>Fuente del problema</th></tr></thead>
+        <tbody>
+          <tr><td>IS Real</td><td>% de impresiones que estás capturando efectivamente</td><td>—</td></tr>
+          <tr><td>Lost Budget</td><td>% de impresiones perdidas por presupuesto diario insuficiente</td><td>Aumentar presupuesto</td></tr>
+          <tr><td>Lost Rank</td><td>% de impresiones perdidas por puja o Quality Score bajo</td><td>Subir CPC o mejorar anuncios</td></tr>
+          <tr><td>Top IS</td><td>% de impresiones en posición superior de la página</td><td>—</td></tr>
+          <tr><td>Abs. Top IS</td><td>% en la posición más alta absoluta de la página</td><td>—</td></tr>
+        </tbody>
+      </table>
+    </section>
+
+    <hr class="divider" />
+
+    <!-- ──────────────── CPC ANALYSIS ──────────────── -->
+    <section class="section" id="cpc-analysis">
+      <div class="section-header">
+        <div class="section-icon amber">💰</div>
+        <div>
+          <div class="section-title">CPC Analysis</div>
+          <div class="section-route">/dashboard/cpc-analysis</div>
+        </div>
+      </div>
+
+      <p style="color:var(--text-2);margin-bottom:16px">Monitoriza el CPC actual de cada campaña frente al techo (ceiling) configurado en la estrategia Target ROAS. Detecta campañas que están saturando su límite de puja.</p>
+
+      <div class="cards-grid">
+        <div class="kpi-card">
+          <div class="kpi-label">CPC Medio Ponderado</div>
+          <div class="kpi-value amber">0.54 €</div>
+          <div class="kpi-sub">Ponderado por clics reales</div>
+        </div>
+        <div class="kpi-card">
+          <div class="kpi-label">Al Techo ≥ 90%</div>
+          <div class="kpi-value red">2</div>
+          <div class="kpi-sub">Campañas en zona crítica</div>
+        </div>
+        <div class="kpi-card">
+          <div class="kpi-label">Zona Aviso 70–89%</div>
+          <div class="kpi-value amber">3</div>
+          <div class="kpi-sub">Campañas a vigilar</div>
+        </div>
+        <div class="kpi-card">
+          <div class="kpi-label">Coste Total</div>
+          <div class="kpi-value">9.252 €</div>
+          <div class="kpi-sub">30 días</div>
+        </div>
+      </div>
+
+      <!-- CPC bar demo -->
+      <div class="bar-demo">
+        <p style="font-size:9px;color:var(--text-3);letter-spacing:0.15em;text-transform:uppercase;margin-bottom:12px">Uso del CPC Ceiling por campaña</p>
+        <div class="bar-row">
+          <div class="bar-label">Shopping — Max ROAS</div>
+          <div class="bar-track"><div class="bar-fill red" style="width:99%"></div></div>
+          <span class="bar-pct" style="color:var(--red)">99%</span>
+        </div>
+        <div class="bar-row">
+          <div class="bar-label">Competencia — BMM</div>
+          <div class="bar-track"><div class="bar-fill red" style="width:96%"></div></div>
+          <span class="bar-pct" style="color:var(--red)">96%</span>
+        </div>
+        <div class="bar-row">
+          <div class="bar-label">Brand — Exact</div>
+          <div class="bar-track"><div class="bar-fill amber" style="width:77%"></div></div>
+          <span class="bar-pct" style="color:var(--amber)">77%</span>
+        </div>
+        <div class="bar-row">
+          <div class="bar-label">Genérico — Amplia</div>
+          <div class="bar-track"><div class="bar-fill green" style="width:63%"></div></div>
+          <span class="bar-pct" style="color:var(--green)">63%</span>
+        </div>
+      </div>
+
+      <ul class="feature-list">
+        <li><span class="fi">🔴</span><span><strong style="color:var(--red)">≥ 90% del techo:</strong> La campaña está bloqueando sus pujas. El sistema no puede pujar más. Considera subir el ceiling o revisar la estrategia.</span></li>
+        <li><span class="fi">🟡</span><span><strong style="color:var(--amber)">70–89% del techo:</strong> Zona de aviso. El sistema está encontrando presión en el límite. Vigila la evolución.</span></li>
+        <li><span class="fi">🟢</span><span><strong style="color:var(--green)">&lt; 70% del techo:</strong> Margen suficiente. El sistema puede ajustar pujas con libertad.</span></li>
+        <li><span class="fi">🔍</span><span><strong style="color:var(--text-1)">Distribución horaria de CPC:</strong> Panel expandible por campaña con gráfico de CPC medio por hora/día para identificar cuándo se satura el techo.</span></li>
+      </ul>
+
+      <p style="font-size:11px;color:var(--text-3);margin-top:8px">El techo de CPC se resuelve en cascada: <span style="color:var(--text-2)">nivel campaña → portfolio inline → cartera MCC → techo manual configurado en Config.</span></p>
+    </section>
+
+    <hr class="divider" />
+
+    <!-- ──────────────── ROAS TRACKER ──────────────── -->
+    <section class="section" id="roas-tracker">
+      <div class="section-header">
+        <div class="section-icon green">🎯</div>
+        <div>
+          <div class="section-title">ROAS Tracker</div>
+          <div class="section-route">/dashboard/roas-tracker</div>
+        </div>
+      </div>
+
+      <p style="color:var(--text-2);margin-bottom:16px">Seguimiento del retorno sobre inversión publicitaria (ROAS) real de cada campaña frente a su objetivo Target ROAS configurado en Google Ads.</p>
+
+      <div class="cards-grid">
+        <div class="kpi-card">
+          <div class="kpi-label">ROAS Medio</div>
+          <div class="kpi-value green">4.2x</div>
+          <div class="kpi-sub">Promedio ponderado</div>
+        </div>
+        <div class="kpi-card">
+          <div class="kpi-label">Por encima del target</div>
+          <div class="kpi-value green">7</div>
+          <div class="kpi-sub">Campañas rentables</div>
+        </div>
+        <div class="kpi-card">
+          <div class="kpi-label">Por debajo del target</div>
+          <div class="kpi-value red">2</div>
+          <div class="kpi-sub">Requieren atención</div>
+        </div>
+        <div class="kpi-card">
+          <div class="kpi-label">Coste Total</div>
+          <div class="kpi-value">9.252 €</div>
+          <div class="kpi-sub">30 días</div>
+        </div>
+      </div>
+
+      <table class="help-table">
+        <thead><tr><th>Estado</th><th>Condición</th><th>Qué significa</th></tr></thead>
+        <tbody>
+          <tr><td><span class="badge badge-green">OK</span></td><td>ROAS real ≥ Target</td><td>La campaña supera su objetivo de retorno</td></tr>
+          <tr><td><span class="badge badge-amber">WARN</span></td><td>ROAS real ≥ 80% del target</td><td>ROAS ligeramente por debajo, vigila evolución</td></tr>
+          <tr><td><span class="badge badge-red">ALERT</span></td><td>ROAS real &lt; 80% del target</td><td>Rentabilidad insuficiente, requiere intervención</td></tr>
+        </tbody>
+      </table>
+
+      <ul class="feature-list">
+        <li><span class="fi">📊</span><span>Gráfico de barras horizontal con top 15 campañas por coste, coloreadas según desviación del objetivo</span></li>
+        <li><span class="fi">📈</span><span>Historial expandible por campaña con evolución del ROAS real en los últimos 30 días vs. línea de target</span></li>
+        <li><span class="fi">↕</span><span>Tabla ordenable por ROAS real, ROAS target o coste para priorizar análisis</span></li>
+      </ul>
+    </section>
+
+    <hr class="divider" />
+
+    <!-- ──────────────── AUCTION INSIGHTS ──────────────── -->
+    <section class="section" id="auction-insights">
+      <div class="section-header">
+        <div class="section-icon purple">📉</div>
+        <div>
+          <div class="section-title">Auction Insights</div>
+          <div class="section-route">/dashboard/auction-insights</div>
+        </div>
+      </div>
+
+      <p style="color:var(--text-2);margin-bottom:16px">Análisis competitivo de la subasta. Compara tu presencia con la de los principales competidores detectados por Google Ads. <span class="badge badge-grey">Demo — datos simulados</span></p>
+
+      <div class="cards-grid">
+        <div class="kpi-card">
+          <div class="kpi-label">Tu Impression Share</div>
+          <div class="kpi-value">68.4%</div>
+          <div class="kpi-sub">Cuota en la subasta</div>
+        </div>
+        <div class="kpi-card">
+          <div class="kpi-label">Top of Page Rate</div>
+          <div class="kpi-value cyan">54.2%</div>
+          <div class="kpi-sub">% en posición superior</div>
+        </div>
+        <div class="kpi-card">
+          <div class="kpi-label">Abs. Top Rate</div>
+          <div class="kpi-value purple">31.7%</div>
+          <div class="kpi-sub">% en posición #1 absoluta</div>
+        </div>
+        <div class="kpi-card">
+          <div class="kpi-label">Competidores</div>
+          <div class="kpi-value amber">5</div>
+          <div class="kpi-sub">Detectados en la subasta</div>
+        </div>
+      </div>
+
+      <ul class="feature-list">
+        <li><span class="fi">📊</span><span><strong style="color:var(--text-1)">Comparativa de IS:</strong> Tu cuenta en cyan destacada frente a los competidores en gris</span></li>
+        <li><span class="fi">🕸</span><span><strong style="color:var(--text-1)">Gráfico radar:</strong> 5 dimensiones comparadas — IS, Top Page, Abs Top, vs Competition y Overlap Rate</span></li>
+        <li><span class="fi">📋</span><span><strong style="color:var(--text-1)">Tabla detallada:</strong> Por dominio: Overlap Rate, Outranked By, Top Page Rate y Absolute Top con barras visuales</span></li>
+      </ul>
+    </section>
+
+    <hr class="divider" />
+
+    <!-- ──────────────── ALERTS ──────────────── -->
+    <section class="section" id="alerts">
+      <div class="section-header">
+        <div class="section-icon red">🔔</div>
+        <div>
+          <div class="section-title">Alerts</div>
+          <div class="section-route">/dashboard/alerts</div>
+        </div>
+      </div>
+
+      <p style="color:var(--text-2);margin-bottom:16px">Sistema de alertas automáticas basadas en umbrales configurados. Detecta problemas que requieren intervención inmediata sin tener que revisar cada sección manualmente.</p>
+
+      <!-- Alert card examples -->
+      <div class="alert-card">
+        <div class="alert-icon red">🚨</div>
+        <div>
+          <div class="alert-title"><span class="badge badge-red" style="margin-right:8px">CRÍTICO</span>CPC al 99% del techo</div>
+          <div class="alert-desc">Shopping — Max ROAS · CPC actual 1.49 € · Techo 1.50 € · El sistema no puede pujar más</div>
+        </div>
+      </div>
+      <div class="alert-card">
+        <div class="alert-icon amber">⚠</div>
+        <div>
+          <div class="alert-title"><span class="badge badge-amber" style="margin-right:8px">AVISO</span>IS perdido por presupuesto</div>
+          <div class="alert-desc">Genérico — Amplia · 28% de impresiones perdidas por budget insuficiente</div>
+        </div>
+      </div>
+      <div class="alert-card">
+        <div class="alert-icon amber">⚠</div>
+        <div>
+          <div class="alert-title"><span class="badge badge-amber" style="margin-right:8px">AVISO</span>ROAS por debajo del objetivo</div>
+          <div class="alert-desc">Competencia — BMM · ROAS real 2.8x · Target 3.0x · 93% del objetivo</div>
+        </div>
+      </div>
+
+      <table class="help-table" style="margin-top:20px">
+        <thead><tr><th>Condición</th><th>Nivel</th></tr></thead>
+        <tbody>
+          <tr><td>CPC ≥ 95% del techo</td><td><span class="badge badge-red">CRÍTICO</span></td></tr>
+          <tr><td>CPC ≥ 80% del techo</td><td><span class="badge badge-amber">AVISO</span></td></tr>
+          <tr><td>IS perdido por presupuesto &gt; 30%</td><td><span class="badge badge-red">CRÍTICO</span></td></tr>
+          <tr><td>IS perdido por presupuesto 15–30%</td><td><span class="badge badge-amber">AVISO</span></td></tr>
+          <tr><td>ROAS real &lt; 70% del target</td><td><span class="badge badge-red">CRÍTICO</span></td></tr>
+          <tr><td>ROAS real 70–85% del target</td><td><span class="badge badge-amber">AVISO</span></td></tr>
+        </tbody>
+      </table>
+    </section>
+
+    <hr class="divider" />
+
+    <!-- ──────────────── REPORTS ──────────────── -->
+    <section class="section" id="reports">
+      <div class="section-header">
+        <div class="section-icon blue">📅</div>
+        <div>
+          <div class="section-title">Reports</div>
+          <div class="section-route">/dashboard/reports</div>
+        </div>
+      </div>
+
+      <p style="color:var(--text-2);margin-bottom:16px">Generador de reportes exportables en CSV para compartir con stakeholders o registrar para auditorías. Cuatro tipos de análisis en un mismo panel.</p>
+
+      <table class="help-table">
+        <thead><tr><th>Tipo de Reporte</th><th>Contenido</th><th>Exporta</th></tr></thead>
+        <tbody>
+          <tr><td>Resumen General</td><td>Todas las métricas por campaña: coste, clics, CTR, CPC, ROAS</td><td><span class="badge badge-green">CSV</span></td></tr>
+          <tr><td>Análisis CPC</td><td>CPC medio vs techo por campaña con uso en %</td><td><span class="badge badge-green">CSV</span></td></tr>
+          <tr><td>ROAS Tracker</td><td>ROAS real vs objetivo por campaña y estado</td><td><span class="badge badge-green">CSV</span></td></tr>
+          <tr><td>IS Monitor</td><td>IS real + IS perdido por presupuesto y ranking</td><td><span class="badge badge-green">CSV</span></td></tr>
+        </tbody>
+      </table>
+
+      <ul class="feature-list">
+        <li><span class="fi">📊</span><span>KPI globales visibles en la cabecera: coste total, clics, CTR global, CPC medio y ROAS global</span></li>
+        <li><span class="fi">📥</span><span>Botón de exportación en cada tipo de reporte — genera un archivo .csv listo para Excel / Google Sheets</span></li>
+        <li><span class="fi">📈</span><span>Cada reporte incluye su propio gráfico de barras para una lectura visual rápida antes de exportar</span></li>
+      </ul>
+    </section>
+
+    <hr class="divider" />
+
+    <!-- ──────────────── CONFIG ──────────────── -->
+    <section class="section" id="config">
+      <div class="section-header">
+        <div class="section-icon cyan">⚙</div>
+        <div>
+          <div class="section-title">Config</div>
+          <div class="section-route">/dashboard/config</div>
+        </div>
+      </div>
+
+      <p style="color:var(--text-2);margin-bottom:16px">Panel de configuración del sistema para personalizar el comportamiento del monitor.</p>
+
+      <ul class="feature-list">
+        <li><span class="fi">🆔</span><span><strong style="color:var(--text-1)">Customer ID por defecto:</strong> Define qué cuenta de Google Ads se carga automáticamente al abrir el dashboard</span></li>
+        <li><span class="fi">💰</span><span><strong style="color:var(--text-1)">Techos CPC manuales:</strong> Cuando Google Ads no expone el ceiling a través de la API, puedes introducirlo manualmente por nombre exacto de campaña</span></li>
+        <li><span class="fi">📏</span><span><strong style="color:var(--text-1)">Umbrales IS:</strong> Configura el umbral de IS para las alertas de campaña de marca (por defecto 85% para campañas con "marca" o "brand" en el nombre)</span></li>
+      </ul>
+    </section>
+
+    <hr class="divider" />
+
+    <!-- ──────────────── FLUJO DE DATOS ──────────────── -->
+    <section class="section" id="flujo">
+      <div class="section-header">
+        <div class="section-icon cyan">⟳</div>
+        <div>
+          <div class="section-title">Flujo de datos</div>
+          <div class="section-route">Arquitectura técnica</div>
+        </div>
+      </div>
+
+      <div class="flow">
+        <div class="flow-box">Google OAuth2<br><span style="font-size:10px;color:var(--text-3)">scope: adwords</span></div>
+        <div class="flow-arrow">→</div>
+        <div class="flow-box highlight">Access Token</div>
+        <div class="flow-arrow">→</div>
+        <div class="flow-box">Google Ads API v23<br><span style="font-size:10px;color:var(--text-3)">/googleAds:search</span></div>
+        <div class="flow-arrow">→</div>
+        <div class="flow-box highlight">google-ads.ts</div>
+        <div class="flow-arrow">→</div>
+        <div class="flow-box">Dashboard</div>
+      </div>
+
+      <ul class="feature-list">
+        <li><span class="fi">🔑</span><span><strong style="color:var(--text-1)">Autenticación:</strong> Google OAuth2 con scope <code style="color:var(--cyan)">https://www.googleapis.com/auth/adwords</code>. El token se refresca automáticamente cuando caduca.</span></li>
+        <li><span class="fi">🔄</span><span><strong style="color:var(--text-1)">Refresco de token:</strong> Si el refresh_token es revocado (<code style="color:var(--amber)">invalid_grant</code>), el sistema limpia los tokens y redirige a re-autenticación.</span></li>
+        <li><span class="fi">🗄</span><span><strong style="color:var(--text-1)">Históricos:</strong> Cada carga de campañas guarda un snapshot en PostgreSQL para los gráficos de evolución de 30 días.</span></li>
+        <li><span class="fi">🏗</span><span><strong style="color:var(--text-1)">MCC + login-customer-id:</strong> El header <code style="color:var(--cyan)">login-customer-id</code> identifica el MCC manager para poder acceder a cuentas hijo y estrategias de cartera.</span></li>
+      </ul>
+
+      <table class="help-table">
+        <thead><tr><th>Variable</th><th>Para qué sirve</th></tr></thead>
+        <tbody>
+          <tr><td>GOOGLE_CLIENT_ID / SECRET</td><td>Credenciales OAuth2 de Google Cloud Console</td></tr>
+          <tr><td>GOOGLE_ADS_DEVELOPER_TOKEN</td><td>Token de acceso a la Google Ads API</td></tr>
+          <tr><td>GOOGLE_ADS_MCC_CUSTOMER_ID</td><td>ID del MCC manager (sin guiones) para login-customer-id</td></tr>
+          <tr><td>NEXTAUTH_SECRET</td><td>Clave de cifrado de sesiones NextAuth</td></tr>
+          <tr><td>DATABASE_URL</td><td>Conexión a PostgreSQL (snapshots históricos)</td></tr>
+          <tr><td>NEXT_PUBLIC_GOOGLE_ADS_CUSTOMER_ID</td><td>Customer ID por defecto en el frontend (opcional)</td></tr>
+        </tbody>
+      </table>
+    </section>
+
+  </main>
+
+  <script>
+    function setActive(el) {
+      document.querySelectorAll('.nav-item').forEach(i => i.classList.remove('active'));
+      el.classList.add('active');
+    }
+
+    // Scrollspy
+    const sections = document.querySelectorAll('section[id], div[id]');
+    const navLinks  = document.querySelectorAll('.nav-item[href^="#"]');
+
+    const observer = new IntersectionObserver((entries) => {
+      entries.forEach(entry => {
+        if (entry.isIntersecting) {
+          const id = entry.target.getAttribute('id');
+          navLinks.forEach(link => {
+            link.classList.toggle('active', link.getAttribute('href') === '#' + id);
+          });
+        }
+      });
+    }, { rootMargin: '-30% 0px -60% 0px' });
+
+    sections.forEach(s => observer.observe(s));
+  </script>
+
+</body>
+</html>
