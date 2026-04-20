@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useEffect, useCallback } from 'react'
-import { useSearchParams } from 'next/navigation'
+import { useAccountContext } from '@/contexts/AccountContext'
 import {
   BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer,
   LineChart, Line, CartesianGrid, ReferenceLine, Cell,
@@ -102,39 +102,37 @@ function CpcHistoryMini({ campaignName, cpcCeiling }: { campaignName: string; cp
 // ── Componente principal ──────────────────────────────────────
 
 export function CpcAnalysisClient({ user }: Props) {
-  const searchParams  = useSearchParams()
-  const urlCid        = searchParams.get('customerId') ?? ''
-  const initialId     = isValidCustomerId(urlCid) ? normalizeCustomerId(urlCid) : DEFAULT_ID
-
+  const { selectedIds } = useAccountContext()
   const [metrics,    setMetrics]    = useState<CampaignMetrics[]>([])
   const [loading,    setLoading]    = useState(false)
   const [error,      setError]      = useState<string | null>(null)
   const [lastUpdate, setLastUpdate] = useState<Date | null>(null)
-  const [customerId, setCustomerId] = useState(initialId)
-  const [inputId,    setInputId]    = useState(initialId)
   const [selectedId, setSelectedId] = useState<string | null>(null)
   const [sortBy,     setSortBy]     = useState<'usage' | 'cpc' | 'cost'>('usage')
 
-  const fetchMetrics = useCallback(async (cid: string) => {
-    if (!isValidCustomerId(cid)) return
+  const fetchMetrics = useCallback(async (cids: string[]) => {
+    const valid = cids.filter(isValidCustomerId)
+    if (!valid.length) return
     setLoading(true); setError(null)
     try {
-      const res  = await fetch(`/api/campaigns?customerId=${normalizeCustomerId(cid)}`)
-      const data = await res.json()
-      if (!res.ok) throw new Error(data.error ?? 'Error desconocido')
-      setMetrics(data.metrics)
+      const results = await Promise.all(
+        valid.map(async cid => {
+          const res  = await fetch(`/api/campaigns?customerId=${normalizeCustomerId(cid)}`)
+          const data = await res.json()
+          if (!res.ok) throw new Error(data.error ?? 'Error desconocido')
+          return data.metrics as CampaignMetrics[]
+        })
+      )
+      setMetrics(results.flat())
       setLastUpdate(new Date())
     } catch (e: any) { setError(e.message) }
     finally { setLoading(false) }
   }, [])
 
-  useEffect(() => { if (isValidCustomerId(customerId)) fetchMetrics(customerId) }, [customerId, fetchMetrics])
-
-  const handleLoad = () => {
-    const norm = normalizeCustomerId(inputId)
-    if (!isValidCustomerId(norm)) { setError('Customer ID inválido'); return }
-    setInputId(norm); setCustomerId(norm)
-  }
+  useEffect(() => {
+    if (selectedIds.length > 0) fetchMetrics(selectedIds)
+    else setMetrics([])
+  }, [selectedIds, fetchMetrics])
 
   // ── KPIs ──────────────────────────────────────────────────
 
@@ -165,22 +163,18 @@ export function CpcAnalysisClient({ user }: Props) {
     <div className="flex min-h-screen bg-bg-base">
       <AppSidebar
         activeSection="cpc-analysis"
-        customerId={customerId}
-        inputId={inputId}
-        onInputChange={setInputId}
-        onLoad={handleLoad}
         lastUpdate={lastUpdate}
         loading={loading}
-        onRefresh={() => fetchMetrics(customerId)}
+        onRefresh={() => fetchMetrics(selectedIds)}
       />
 
-      <div className="ml-[220px] flex-1 flex flex-col min-h-screen">
+      <div className="ml-[240px] flex-1 flex flex-col min-h-screen">
         {/* Top bar */}
         <header className="border-b border-bg-border bg-bg-surface sticky top-0 z-20">
           <div className="px-6 py-3 flex items-center justify-between">
             <div className="flex items-center gap-3">
               <span className="num text-sm font-bold text-text-primary tracking-widest">CPC_ANALYSIS</span>
-              {customerId && <span className="num text-xs text-text-tertiary">#{customerId}</span>}
+              {selectedIds.length > 0 && <span className="num text-xs text-text-tertiary">{selectedIds.length === 1 ? `#${selectedIds[0]}` : `${selectedIds.length} cuentas`}</span>}
             </div>
             <div className="flex items-center gap-3">
               {alerts > 0 && (

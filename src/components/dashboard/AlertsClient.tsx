@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useEffect, useCallback } from 'react'
-import { useSearchParams } from 'next/navigation'
+import { useAccountContext } from '@/contexts/AccountContext'
 import { AppSidebar } from '@/components/layout/AppSidebar'
 import { CampaignMetrics } from '@/types'
 
@@ -130,37 +130,35 @@ function generateAlerts(campaigns: CampaignMetrics[]): Alert[] {
 }
 
 export function AlertsClient({ user }: Props) {
-  const params = useSearchParams()
-  const [customerId, setCustomerId] = useState(() => {
-    const p = params.get('customerId')
-    return p ? normalizeCustomerId(p) : DEFAULT_ID
-  })
-  const [inputId, setInputId] = useState(customerId)
+  const { selectedIds } = useAccountContext()
   const [campaigns, setCampaigns] = useState<CampaignMetrics[]>([])
   const [loading, setLoading] = useState(false)
   const [lastUpdate, setLastUpdate] = useState<Date | null>(null)
   const [filter, setFilter] = useState<AlertLevel | 'all'>('all')
   const [dismissed, setDismissed] = useState<Set<string>>(new Set())
 
-  const load = useCallback(async (cid: string) => {
-    if (!isValidCustomerId(cid)) return
+  const load = useCallback(async (cids: string[]) => {
+    const valid = cids.filter(isValidCustomerId)
+    if (!valid.length) return
     setLoading(true)
     try {
-      const r = await fetch(`/api/campaigns?customerId=${normalizeCustomerId(cid)}`)
-      const j = await r.json()
-      setCampaigns(j.metrics ?? [])
+      const results = await Promise.all(
+        valid.map(async cid => {
+          const r = await fetch(`/api/campaigns?customerId=${normalizeCustomerId(cid)}`)
+          const j = await r.json()
+          return (j.metrics ?? []) as CampaignMetrics[]
+        })
+      )
+      setCampaigns(results.flat())
       setLastUpdate(new Date())
     } catch { }
     setLoading(false)
   }, [])
 
-  useEffect(() => { if (customerId) load(customerId) }, [customerId, load])
-
-  const handleLoad = () => {
-    const n = normalizeCustomerId(inputId)
-    setCustomerId(n)
-    load(n)
-  }
+  useEffect(() => {
+    if (selectedIds.length > 0) load(selectedIds)
+    else setCampaigns([])
+  }, [selectedIds, load])
 
   const allAlerts = generateAlerts(campaigns).filter(a => !dismissed.has(a.id))
   const filtered = filter === 'all' ? allAlerts : allAlerts.filter(a => a.level === filter)
@@ -173,16 +171,12 @@ export function AlertsClient({ user }: Props) {
     <div className="flex h-screen bg-bg-base overflow-hidden">
       <AppSidebar
         activeSection="alerts"
-        customerId={customerId}
-        inputId={inputId}
-        onInputChange={setInputId}
-        onLoad={handleLoad}
         lastUpdate={lastUpdate}
         loading={loading}
-        onRefresh={() => load(customerId)}
+        onRefresh={() => load(selectedIds)}
       />
 
-      <main className="ml-[220px] flex-1 overflow-y-auto px-8 py-8 space-y-6">
+      <main className="ml-[240px] flex-1 overflow-y-auto px-8 py-8 space-y-6">
         {/* Header */}
         <div className="flex items-center justify-between">
           <div>
@@ -300,9 +294,9 @@ export function AlertsClient({ user }: Props) {
           </div>
         )}
 
-        {!customerId && (
+        {selectedIds.length === 0 && (
           <div className="bg-bg-card border border-bg-border rounded-lg p-12 text-center">
-            <p className="num text-text-tertiary text-sm tracking-wider">Introduce un Customer ID en el panel izquierdo</p>
+            <p className="num text-text-tertiary text-sm tracking-wider">Selecciona una cuenta en el panel izquierdo</p>
           </div>
         )}
       </main>

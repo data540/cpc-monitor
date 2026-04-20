@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useEffect, useCallback } from 'react'
-import { useSearchParams } from 'next/navigation'
+import { useAccountContext } from '@/contexts/AccountContext'
 import {
   BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer,
   LineChart, Line, CartesianGrid, ReferenceLine, Cell,
@@ -104,12 +104,7 @@ function RoasHistoryMini({ campaignName, targetRoas }: { campaignName: string; t
 type SortKey = 'roas' | 'target' | 'cost'
 
 export function RoasTrackerClient({ user }: Props) {
-  const params = useSearchParams()
-  const [customerId, setCustomerId] = useState(() => {
-    const p = params.get('customerId')
-    return p ? normalizeCustomerId(p) : DEFAULT_ID
-  })
-  const [inputId,    setInputId]    = useState(customerId)
+  const { selectedIds } = useAccountContext()
   const [metrics,    setMetrics]    = useState<CampaignMetrics[]>([])
   const [loading,    setLoading]    = useState(false)
   const [error,      setError]      = useState<string | null>(null)
@@ -118,26 +113,29 @@ export function RoasTrackerClient({ user }: Props) {
   const [sortDir,    setSortDir]    = useState<'asc' | 'desc'>('asc')
   const [expandedId, setExpandedId] = useState<string | null>(null)
 
-  const fetchMetrics = useCallback(async (cid: string) => {
-    if (!isValidCustomerId(cid)) return
+  const fetchMetrics = useCallback(async (cids: string[]) => {
+    const valid = cids.filter(isValidCustomerId)
+    if (!valid.length) return
     setLoading(true); setError(null)
     try {
-      const res  = await fetch(`/api/campaigns?customerId=${normalizeCustomerId(cid)}`)
-      const data = await res.json()
-      if (!res.ok) throw new Error(data.error ?? 'Error desconocido')
-      setMetrics(data.metrics ?? [])
+      const results = await Promise.all(
+        valid.map(async cid => {
+          const res  = await fetch(`/api/campaigns?customerId=${normalizeCustomerId(cid)}`)
+          const data = await res.json()
+          if (!res.ok) throw new Error(data.error ?? 'Error desconocido')
+          return (data.metrics ?? []) as CampaignMetrics[]
+        })
+      )
+      setMetrics(results.flat())
       setLastUpdate(new Date())
     } catch (e: any) { setError(e.message) }
     finally { setLoading(false) }
   }, [])
 
-  useEffect(() => { if (customerId) fetchMetrics(customerId) }, [customerId, fetchMetrics])
-
-  const handleLoad = () => {
-    const n = normalizeCustomerId(inputId)
-    if (!isValidCustomerId(n)) { setError('Customer ID inválido'); return }
-    setInputId(n); setCustomerId(n)
-  }
+  useEffect(() => {
+    if (selectedIds.length > 0) fetchMetrics(selectedIds)
+    else setMetrics([])
+  }, [selectedIds, fetchMetrics])
 
   const handleSort = (key: SortKey) => {
     if (sortKey === key) setSortDir(d => d === 'asc' ? 'desc' : 'asc')
@@ -188,22 +186,18 @@ export function RoasTrackerClient({ user }: Props) {
     <div className="flex min-h-screen bg-bg-base">
       <AppSidebar
         activeSection="roas-tracker"
-        customerId={customerId}
-        inputId={inputId}
-        onInputChange={setInputId}
-        onLoad={handleLoad}
         lastUpdate={lastUpdate}
         loading={loading}
-        onRefresh={() => fetchMetrics(customerId)}
+        onRefresh={() => fetchMetrics(selectedIds)}
       />
 
-      <div className="ml-[220px] flex-1 flex flex-col min-h-screen">
+      <div className="ml-[240px] flex-1 flex flex-col min-h-screen">
         {/* Top bar */}
         <header className="border-b border-bg-border bg-bg-surface sticky top-0 z-20">
           <div className="px-6 py-3 flex items-center justify-between">
             <div className="flex items-center gap-3">
               <span className="num text-sm font-bold text-text-primary tracking-widest">ROAS_TRACKER</span>
-              {customerId && <span className="num text-xs text-text-tertiary">#{customerId}</span>}
+              {selectedIds.length > 0 && <span className="num text-xs text-text-tertiary">{selectedIds.length === 1 ? `#${selectedIds[0]}` : `${selectedIds.length} cuentas`}</span>}
             </div>
             <div className="flex items-center gap-3">
               {belowTarget > 0 && (
@@ -355,15 +349,15 @@ export function RoasTrackerClient({ user }: Props) {
             </div>
           )}
 
-          {!loading && metrics.length === 0 && customerId && (
+          {!loading && metrics.length === 0 && selectedIds.length > 0 && (
             <div className="bg-bg-card border border-bg-border rounded-lg p-12 text-center">
-              <p className="num text-text-tertiary text-sm tracking-wider">No hay datos disponibles para este Customer ID</p>
+              <p className="num text-text-tertiary text-sm tracking-wider">No hay datos disponibles para las cuentas seleccionadas</p>
             </div>
           )}
 
-          {!customerId && (
+          {selectedIds.length === 0 && (
             <div className="bg-bg-card border border-bg-border rounded-lg p-12 text-center">
-              <p className="num text-text-tertiary text-sm tracking-wider">Introduce un Customer ID en el panel izquierdo</p>
+              <p className="num text-text-tertiary text-sm tracking-wider">Selecciona una cuenta en el panel izquierdo</p>
             </div>
           )}
         </main>

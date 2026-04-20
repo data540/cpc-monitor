@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useEffect, useCallback } from 'react'
-import { useSearchParams } from 'next/navigation'
+import { useAccountContext } from '@/contexts/AccountContext'
 import {
   BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid,
   LineChart, Line, Cell,
@@ -58,36 +58,34 @@ function downloadCSV(filename: string, rows: string[][]) {
 }
 
 export function ReportsClient({ user }: Props) {
-  const params = useSearchParams()
-  const [customerId, setCustomerId] = useState(() => {
-    const p = params.get('customerId')
-    return p ? normalizeCustomerId(p) : DEFAULT_ID
-  })
-  const [inputId, setInputId] = useState(customerId)
+  const { selectedIds } = useAccountContext()
   const [campaigns, setCampaigns] = useState<CampaignMetrics[]>([])
   const [loading, setLoading] = useState(false)
   const [lastUpdate, setLastUpdate] = useState<Date | null>(null)
   const [activeReport, setActiveReport] = useState<ReportType>('summary')
 
-  const load = useCallback(async (cid: string) => {
-    if (!isValidCustomerId(cid)) return
+  const load = useCallback(async (cids: string[]) => {
+    const valid = cids.filter(isValidCustomerId)
+    if (!valid.length) return
     setLoading(true)
     try {
-      const r = await fetch(`/api/campaigns?customerId=${normalizeCustomerId(cid)}`)
-      const j = await r.json()
-      setCampaigns(j.metrics ?? [])
+      const results = await Promise.all(
+        valid.map(async cid => {
+          const r = await fetch(`/api/campaigns?customerId=${normalizeCustomerId(cid)}`)
+          const j = await r.json()
+          return (j.metrics ?? []) as CampaignMetrics[]
+        })
+      )
+      setCampaigns(results.flat())
       setLastUpdate(new Date())
     } catch { }
     setLoading(false)
   }, [])
 
-  useEffect(() => { if (customerId) load(customerId) }, [customerId, load])
-
-  const handleLoad = () => {
-    const n = normalizeCustomerId(inputId)
-    setCustomerId(n)
-    load(n)
-  }
+  useEffect(() => {
+    if (selectedIds.length > 0) load(selectedIds)
+    else setCampaigns([])
+  }, [selectedIds, load])
 
   // All fields already in correct units from CampaignMetrics
   const totalCost  = campaigns.reduce((s, m) => s + m.costEur, 0)
@@ -140,7 +138,7 @@ export function ReportsClient({ user }: Props) {
       fmt(m.avgCpc),
       m.realRoas !== null ? fmt(m.realRoas) : '—',
     ])
-    downloadCSV(`reporte-resumen-${customerId}-${new Date().toISOString().slice(0, 10)}.csv`, [header, ...rows])
+    downloadCSV(`reporte-resumen-${selectedIds[0] ?? 'multi'}-${new Date().toISOString().slice(0, 10)}.csv`, [header, ...rows])
   }
 
   const exportCpc = () => {
@@ -152,7 +150,7 @@ export function ReportsClient({ user }: Props) {
       m.cpcUsagePct !== null ? `${m.cpcUsagePct.toFixed(1)}%` : '—',
       m.cpcUsagePct !== null ? (m.cpcUsagePct >= 90 ? 'CRÍTICO' : m.cpcUsagePct >= 70 ? 'AVISO' : 'OK') : '—',
     ])
-    downloadCSV(`reporte-cpc-${customerId}-${new Date().toISOString().slice(0, 10)}.csv`, [header, ...rows])
+    downloadCSV(`reporte-cpc-${selectedIds[0] ?? 'multi'}-${new Date().toISOString().slice(0, 10)}.csv`, [header, ...rows])
   }
 
   const exportRoas = () => {
@@ -163,7 +161,7 @@ export function ReportsClient({ user }: Props) {
       m.targetRoas ? fmt(m.targetRoas) : '—',
       fmt(m.costEur),
     ])
-    downloadCSV(`reporte-roas-${customerId}-${new Date().toISOString().slice(0, 10)}.csv`, [header, ...rows])
+    downloadCSV(`reporte-roas-${selectedIds[0] ?? 'multi'}-${new Date().toISOString().slice(0, 10)}.csv`, [header, ...rows])
   }
 
   const exportIs = () => {
@@ -174,7 +172,7 @@ export function ReportsClient({ user }: Props) {
       m.isLostBudget !== null ? fmtPct(m.isLostBudget) : '—',
       m.isLostRank !== null ? fmtPct(m.isLostRank) : '—',
     ])
-    downloadCSV(`reporte-is-${customerId}-${new Date().toISOString().slice(0, 10)}.csv`, [header, ...rows])
+    downloadCSV(`reporte-is-${selectedIds[0] ?? 'multi'}-${new Date().toISOString().slice(0, 10)}.csv`, [header, ...rows])
   }
 
   const reports: { key: ReportType; label: string; desc: string }[] = [
@@ -188,13 +186,9 @@ export function ReportsClient({ user }: Props) {
     <div className="flex h-screen bg-bg-base overflow-hidden">
       <AppSidebar
         activeSection="reports"
-        customerId={customerId}
-        inputId={inputId}
-        onInputChange={setInputId}
-        onLoad={handleLoad}
         lastUpdate={lastUpdate}
         loading={loading}
-        onRefresh={() => load(customerId)}
+        onRefresh={() => load(selectedIds)}
       />
 
       <main className="ml-[220px] flex-1 overflow-y-auto px-8 py-8 space-y-6">
@@ -363,15 +357,15 @@ export function ReportsClient({ user }: Props) {
           </>
         )}
 
-        {!loading && campaigns.length === 0 && customerId && (
+        {!loading && campaigns.length === 0 && selectedIds.length > 0 && (
           <div className="bg-bg-card border border-bg-border rounded-lg p-12 text-center">
-            <p className="num text-text-tertiary text-sm tracking-wider">Carga datos con el Customer ID del panel izquierdo</p>
+            <p className="num text-text-tertiary text-sm tracking-wider">No hay datos disponibles para las cuentas seleccionadas</p>
           </div>
         )}
 
-        {!customerId && (
+        {selectedIds.length === 0 && (
           <div className="bg-bg-card border border-bg-border rounded-lg p-12 text-center">
-            <p className="num text-text-tertiary text-sm tracking-wider">Introduce un Customer ID en el panel izquierdo</p>
+            <p className="num text-text-tertiary text-sm tracking-wider">Selecciona una cuenta en el panel izquierdo</p>
           </div>
         )}
       </main>

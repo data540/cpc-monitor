@@ -1,5 +1,11 @@
 // ── Tipos compartidos — CPC Monitor ──────────────────────────
 
+export interface GoogleAdsAccount {
+  id:       string
+  name:     string
+  currency: string
+}
+
 export interface CampaignMetrics {
   campaignId:              string
   campaignName:            string
@@ -113,4 +119,21 @@ export interface CpcDistributionData {
     clickCount: number
     percentage: number
   }>
+}
+
+export interface AuctionInsightEntry {
+  domain:            string
+  impressionShare:   number
+  overlapRate:       number
+  outrankedRate:     number
+  positionAboveRate: number
+  topOfPageRate:     number
+  absTopOfPageRate:  number
+  isOwnAccount:      boolean
+}
+
+export interface AuctionInsightsResult {
+  entries:   AuctionInsightEntry[]
+  dateRange: { start: string; end: string }
+  noData:    boolean
 }

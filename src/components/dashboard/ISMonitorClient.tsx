@@ -1,7 +1,6 @@
 'use client'
 
 import { useState, useEffect, useCallback } from 'react'
-import { useSearchParams } from 'next/navigation'
 import {
   RadarChart, Radar, PolarGrid, PolarAngleAxis,
   BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Cell,
@@ -9,6 +8,7 @@ import {
 } from 'recharts'
 import { AppSidebar } from '@/components/layout/AppSidebar'
 import { CampaignMetrics } from '@/types'
+import { useAccountContext } from '@/contexts/AccountContext'
 
 interface Props {
   user: { id: string; name?: string; email?: string; image?: string }
@@ -115,30 +115,28 @@ function ISEvolutionChart({ campaignId, customerId }: { campaignId: string; cust
 // ── Componente principal ──────────────────────────────────────
 
 export function ISMonitorClient({ user }: Props) {
-  const searchParams = useSearchParams()
-  const urlCustomerId = searchParams.get('customerId') ?? ''
+  const { selectedIds } = useAccountContext()
+  const [metrics,    setMetrics]    = useState<CampaignMetrics[]>([])
+  const [loading,    setLoading]    = useState(false)
+  const [error,      setError]      = useState<string | null>(null)
+  const [lastUpdate, setLastUpdate] = useState<Date | null>(null)
+  const [selectedId, setSelectedId] = useState<string | null>(null)
+  const [sortBy,     setSortBy]     = useState<'is' | 'lostBudget' | 'lostRank'>('is')
 
-  const initialId = isValidCustomerId(urlCustomerId)
-    ? normalizeCustomerId(urlCustomerId)
-    : DEFAULT_ID
-
-  const [metrics,       setMetrics]       = useState<CampaignMetrics[]>([])
-  const [loading,       setLoading]       = useState(false)
-  const [error,         setError]         = useState<string | null>(null)
-  const [lastUpdate,    setLastUpdate]    = useState<Date | null>(null)
-  const [customerId,    setCustomerId]    = useState(initialId)
-  const [inputId,       setInputId]       = useState(initialId)
-  const [selectedId,    setSelectedId]    = useState<string | null>(null)
-  const [sortBy,        setSortBy]        = useState<'is' | 'lostBudget' | 'lostRank'>('is')
-
-  const fetchMetrics = useCallback(async (cid: string) => {
-    if (!isValidCustomerId(cid)) return
+  const fetchMetrics = useCallback(async (cids: string[]) => {
+    const valid = cids.filter(isValidCustomerId)
+    if (!valid.length) return
     setLoading(true); setError(null)
     try {
-      const res  = await fetch(`/api/campaigns?customerId=${normalizeCustomerId(cid)}`)
-      const data = await res.json()
-      if (!res.ok) throw new Error(data.error ?? 'Error desconocido')
-      setMetrics(data.metrics)
+      const results = await Promise.all(
+        valid.map(async cid => {
+          const res  = await fetch(`/api/campaigns?customerId=${normalizeCustomerId(cid)}`)
+          const data = await res.json()
+          if (!res.ok) throw new Error(data.error ?? 'Error desconocido')
+          return data.metrics as CampaignMetrics[]
+        })
+      )
+      setMetrics(results.flat())
       setLastUpdate(new Date())
     } catch (e: any) {
       setError(e.message)
@@ -148,14 +146,9 @@ export function ISMonitorClient({ user }: Props) {
   }, [])
 
   useEffect(() => {
-    if (isValidCustomerId(customerId)) fetchMetrics(customerId)
-  }, [customerId, fetchMetrics])
-
-  const handleLoad = () => {
-    const norm = normalizeCustomerId(inputId)
-    if (!isValidCustomerId(norm)) { setError('Customer ID inválido'); return }
-    setInputId(norm); setCustomerId(norm)
-  }
+    if (selectedIds.length > 0) fetchMetrics(selectedIds)
+    else setMetrics([])
+  }, [selectedIds, fetchMetrics])
 
   // ── Métricas IS ───────────────────────────────────────────
 
@@ -196,24 +189,22 @@ export function ISMonitorClient({ user }: Props) {
 
       <AppSidebar
         activeSection="is-monitor"
-        customerId={customerId}
-        inputId={inputId}
-        onInputChange={setInputId}
-        onLoad={handleLoad}
         lastUpdate={lastUpdate}
         loading={loading}
-        onRefresh={() => fetchMetrics(customerId)}
+        onRefresh={() => fetchMetrics(selectedIds)}
       />
 
-      <div className="ml-[220px] flex-1 flex flex-col min-h-screen">
+      <div className="ml-[240px] flex-1 flex flex-col min-h-screen">
 
         {/* Top bar */}
         <header className="border-b border-bg-border bg-bg-surface sticky top-0 z-20">
           <div className="px-6 py-3 flex items-center justify-between">
             <div className="flex items-center gap-3">
               <span className="num text-sm font-bold text-text-primary tracking-widest">IS_MONITOR</span>
-              {customerId && (
-                <span className="num text-xs text-text-tertiary">#{customerId}</span>
+              {selectedIds.length > 0 && (
+                <span className="num text-xs text-text-tertiary">
+                  {selectedIds.length === 1 ? `#${selectedIds[0]}` : `${selectedIds.length} cuentas`}
+                </span>
               )}
             </div>
             <div className="flex items-center gap-3">
@@ -404,7 +395,7 @@ export function ISMonitorClient({ user }: Props) {
                                 <p className="num text-[9px] text-text-tertiary tracking-widest uppercase mb-2">
                                   Evolución IS histórica
                                 </p>
-                                <ISEvolutionChart campaignId={m.campaignId} customerId={customerId} />
+                                <ISEvolutionChart campaignId={m.campaignId} customerId={selectedIds[0] ?? ''} />
                               </div>
                             )}
                           </div>

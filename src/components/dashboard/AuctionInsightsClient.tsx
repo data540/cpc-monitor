@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useEffect, useCallback } from 'react'
-import { useSearchParams } from 'next/navigation'
+import { useAccountContext } from '@/contexts/AccountContext'
 import {
   BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Cell,
   RadarChart, PolarGrid, PolarAngleAxis, Radar,
@@ -17,8 +17,6 @@ function normalizeCustomerId(v: string) { return v.replace(/-/g, '').trim() }
 function isValidCustomerId(v: string)   { return /^\d{10}$/.test(normalizeCustomerId(v)) }
 const DEFAULT_ID = isValidCustomerId(ENV_CUSTOMER_ID) ? normalizeCustomerId(ENV_CUSTOMER_ID) : ''
 
-// Simulated auction insight data structure
-// In a real implementation this would come from the Google Ads API auction-insights endpoint
 interface AuctionRow {
   domain: string
   impressionShare: number
@@ -54,50 +52,56 @@ function CustomTooltip({ active, payload, label }: any) {
   )
 }
 
-// Placeholder data until real API integration
-function generateMockData(customerId: string): AuctionRow[] {
-  const seed = customerId.split('').reduce((a, c) => a + c.charCodeAt(0), 0)
-  const rng = (min: number, max: number, offset = 0) => {
-    const v = Math.sin(seed + offset) * 0.5 + 0.5
-    return +(min + v * (max - min)).toFixed(3)
-  }
-  return [
-    { domain: 'Tu cuenta',         impressionShare: rng(0.4, 0.85, 1), overlapRate: 1,              outrankedRate: 0,              positionAboveRate: 0,              topOfPageRate: rng(0.5, 0.9, 10), absTopOfPageRate: rng(0.3, 0.7, 11) },
-    { domain: 'competitor-a.com',  impressionShare: rng(0.3, 0.7,  2), overlapRate: rng(0.4, 0.8, 3), outrankedRate: rng(0.2, 0.5, 4), positionAboveRate: rng(0.3, 0.6, 5), topOfPageRate: rng(0.4, 0.8, 12), absTopOfPageRate: rng(0.2, 0.5, 13) },
-    { domain: 'competitor-b.com',  impressionShare: rng(0.2, 0.6,  6), overlapRate: rng(0.3, 0.7, 7), outrankedRate: rng(0.1, 0.4, 8), positionAboveRate: rng(0.2, 0.5, 9), topOfPageRate: rng(0.3, 0.7, 14), absTopOfPageRate: rng(0.1, 0.4, 15) },
-    { domain: 'competitor-c.com',  impressionShare: rng(0.15, 0.5,16), overlapRate: rng(0.2, 0.6,17), outrankedRate: rng(0.1, 0.3,18), positionAboveRate: rng(0.1, 0.4,19), topOfPageRate: rng(0.2, 0.6, 20), absTopOfPageRate: rng(0.1, 0.3, 21) },
-    { domain: 'competitor-d.com',  impressionShare: rng(0.1, 0.4, 22), overlapRate: rng(0.1, 0.5,23), outrankedRate: rng(0.05,0.2,24), positionAboveRate: rng(0.1, 0.3,25), topOfPageRate: rng(0.1, 0.5, 26), absTopOfPageRate: rng(0.05,0.2,27) },
-  ]
-}
-
 export function AuctionInsightsClient({ user }: Props) {
-  const params = useSearchParams()
-  const [customerId, setCustomerId] = useState(() => {
-    const p = params.get('customerId')
-    return p ? normalizeCustomerId(p) : DEFAULT_ID
-  })
-  const [inputId, setInputId] = useState(customerId)
-  const [loading, setLoading] = useState(false)
+  const { selectedIds } = useAccountContext()
+  const [loading,    setLoading]    = useState(false)
   const [lastUpdate, setLastUpdate] = useState<Date | null>(null)
-  const [data, setData] = useState<AuctionRow[]>([])
+  const [data,       setData]       = useState<AuctionRow[]>([])
+  const [noData,     setNoData]     = useState(false)
+  const [error,      setError]      = useState<string | null>(null)
 
-  const load = useCallback((cid: string) => {
-    if (!isValidCustomerId(cid)) return
-    setLoading(true)
-    setTimeout(() => {
-      setData(generateMockData(cid))
+  const load = useCallback(async (cids: string[]) => {
+    const valid = cids.filter(isValidCustomerId)
+    if (!valid.length) return
+    setLoading(true); setError(null); setNoData(false)
+    try {
+      // Use first selected account for auction insights
+      const cid = valid[0]
+      const res = await fetch(`/api/auction-insights?customerId=${cid}`)
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}))
+        setError(body.reauth
+          ? 'Sesión expirada. Vuelve a conectar tu cuenta de Google Ads.'
+          : (body.error ?? `Error ${res.status}`)
+        )
+        return
+      }
+      const json = await res.json()
+      if (json.noData || !json.entries?.length) {
+        setNoData(true); setData([])
+      } else {
+        setData(json.entries.map((e: any) => ({
+          domain:            e.isOwnAccount ? 'Tu cuenta' : e.domain,
+          impressionShare:   e.impressionShare,
+          overlapRate:       e.overlapRate,
+          outrankedRate:     e.outrankedRate,
+          positionAboveRate: e.positionAboveRate,
+          topOfPageRate:     e.topOfPageRate,
+          absTopOfPageRate:  e.absTopOfPageRate,
+        })))
+      }
       setLastUpdate(new Date())
+    } catch (err: any) {
+      setError(err.message ?? 'Error de red')
+    } finally {
       setLoading(false)
-    }, 600)
+    }
   }, [])
 
-  useEffect(() => { if (customerId) load(customerId) }, [customerId, load])
-
-  const handleLoad = () => {
-    const n = normalizeCustomerId(inputId)
-    setCustomerId(n)
-    load(n)
-  }
+  useEffect(() => {
+    if (selectedIds.length > 0) load(selectedIds)
+    else { setData([]); setNoData(false) }
+  }, [selectedIds, load])
 
   const isData = data.length > 0
   const myRow = data[0]
@@ -117,16 +121,12 @@ export function AuctionInsightsClient({ user }: Props) {
     <div className="flex h-screen bg-bg-base overflow-hidden">
       <AppSidebar
         activeSection="auction-insights"
-        customerId={customerId}
-        inputId={inputId}
-        onInputChange={setInputId}
-        onLoad={handleLoad}
         lastUpdate={lastUpdate}
         loading={loading}
-        onRefresh={() => load(customerId)}
+        onRefresh={() => load(selectedIds)}
       />
 
-      <main className="ml-[220px] flex-1 overflow-y-auto px-8 py-8 space-y-6">
+      <main className="ml-[240px] flex-1 overflow-y-auto px-8 py-8 space-y-6">
         {/* Header */}
         <div className="flex items-center justify-between">
           <div>
@@ -134,7 +134,12 @@ export function AuctionInsightsClient({ user }: Props) {
             <h1 className="num text-xl font-bold text-text-primary tracking-wide">Auction Insights</h1>
           </div>
           <div className="flex items-center gap-3">
-            <span className="num text-[9px] bg-amber-DEFAULT/10 text-amber-DEFAULT border border-amber-DEFAULT/30 px-2 py-1 rounded tracking-widest">DEMO DATA</span>
+            {noData
+              ? <span className="num text-[9px] bg-amber-DEFAULT/10 text-amber-DEFAULT border border-amber-DEFAULT/30 px-2 py-1 rounded tracking-widest">SIN DATOS</span>
+              : data.length > 0
+                ? <span className="num text-[9px] bg-green-DEFAULT/10 text-green-DEFAULT border border-green-DEFAULT/30 px-2 py-1 rounded tracking-widest">LIVE</span>
+                : null
+            }
             {lastUpdate && (
               <p className="num text-[10px] text-text-tertiary tracking-wider">
                 SYNC {lastUpdate.toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit', second: '2-digit' })}
@@ -225,17 +230,36 @@ export function AuctionInsightsClient({ user }: Props) {
               </table>
             </div>
 
-            <div className="bg-bg-card border border-amber-DEFAULT/20 rounded-lg p-4">
-              <p className="num text-[10px] text-amber-DEFAULT tracking-wider">
-                ⚠ Los datos de Auction Insights requieren acceso a la API de Google Ads con permisos de reporting avanzado. Los datos mostrados son ilustrativos. La integración real se activará próximamente.
-              </p>
-            </div>
+            {noData && (
+              <div className="bg-bg-card border border-amber-DEFAULT/20 rounded-lg p-4">
+                <p className="num text-[10px] text-amber-DEFAULT tracking-wider">
+                  ⚠ Sin datos de Auction Insights para este período. Ocurre cuando el tráfico es insuficiente o los datos aún no están disponibles (retardo de 24-48h). Prueba con un rango de fechas más amplio.
+                </p>
+              </div>
+            )}
+            {error && (
+              <div className="bg-bg-card border border-red-500/20 rounded-lg p-4">
+                <p className="num text-[10px] text-red-400 tracking-wider">⚠ {error}</p>
+              </div>
+            )}
           </>
         )}
 
-        {!customerId && (
+        {selectedIds.length === 0 && (
           <div className="bg-bg-card border border-bg-border rounded-lg p-12 text-center">
-            <p className="num text-text-tertiary text-sm tracking-wider">Introduce un Customer ID en el panel izquierdo</p>
+            <p className="num text-text-tertiary text-sm tracking-wider">Selecciona una cuenta en el panel izquierdo</p>
+          </div>
+        )}
+
+        {selectedIds.length > 0 && noData && !loading && (
+          <div className="bg-bg-card border border-bg-border rounded-lg p-12 text-center">
+            <p className="num text-text-tertiary text-sm tracking-wider">Sin datos de Auction Insights para este período o cuenta.</p>
+          </div>
+        )}
+
+        {selectedIds.length > 0 && error && !loading && (
+          <div className="bg-bg-card border border-bg-border rounded-lg p-12 text-center">
+            <p className="num text-red-400 text-sm tracking-wider">{error}</p>
           </div>
         )}
       </main>

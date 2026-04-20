@@ -6,6 +6,7 @@ import { CampaignTable } from './CampaignTable'
 import { CampaignDetailView } from './CampaignDetailView'
 import { AppSidebar } from '@/components/layout/AppSidebar'
 import { CampaignMetrics } from '@/types'
+import { useAccountContext } from '@/contexts/AccountContext'
 
 interface Props {
   user: { id: string; name?: string; email?: string; image?: string }
@@ -55,28 +56,32 @@ function SummaryCard({
 // ── Dashboard principal ───────────────────────────────────────
 
 export function DashboardClient({ user }: Props) {
+  const { selectedIds } = useAccountContext()
   const [metrics,          setMetrics]          = useState<CampaignMetrics[]>([])
   const [loading,          setLoading]          = useState(false)
   const [error,            setError]            = useState<string | null>(null)
   const [needsReauth,      setNeedsReauth]      = useState(false)
   const [lastUpdate,       setLastUpdate]       = useState<Date | null>(null)
-  const [customerId,       setCustomerId]       = useState(DEFAULT_CUSTOMER_ID)
-  const [inputId,          setInputId]          = useState(DEFAULT_CUSTOMER_ID)
   const [view,             setView]             = useState<'cards' | 'table'>('table')
   const [selectedCampaign, setSelectedCampaign] = useState<CampaignMetrics | null>(null)
 
-  const fetchMetrics = useCallback(async (cid: string) => {
-    if (!isValidCustomerId(cid)) return
-    const normalizedCid = normalizeCustomerId(cid)
+  const fetchMetrics = useCallback(async (cids: string[]) => {
+    const valid = cids.filter(isValidCustomerId)
+    if (!valid.length) return
     setLoading(true); setError(null); setNeedsReauth(false)
     try {
-      const res  = await fetch(`/api/campaigns?customerId=${normalizedCid}`)
-      const data = await res.json()
-      if (!res.ok) {
-        if (data.reauth) setNeedsReauth(true)
-        throw new Error(data.error ?? 'Error desconocido')
-      }
-      setMetrics(data.metrics)
+      const results = await Promise.all(
+        valid.map(async cid => {
+          const res  = await fetch(`/api/campaigns?customerId=${normalizeCustomerId(cid)}`)
+          const data = await res.json()
+          if (!res.ok) {
+            if (data.reauth) setNeedsReauth(true)
+            throw new Error(data.error ?? 'Error desconocido')
+          }
+          return data.metrics as CampaignMetrics[]
+        })
+      )
+      setMetrics(results.flat())
       setLastUpdate(new Date())
     } catch (e: any) {
       setError(e.message)
@@ -86,56 +91,40 @@ export function DashboardClient({ user }: Props) {
   }, [])
 
   useEffect(() => {
-    if (isValidCustomerId(customerId)) fetchMetrics(customerId)
-  }, [customerId, fetchMetrics])
+    if (selectedIds.length > 0) fetchMetrics(selectedIds)
+    else setMetrics([])
+  }, [selectedIds, fetchMetrics])
 
   // Auto-refresh cada 6 horas
   useEffect(() => {
-    const interval = setInterval(() => { if (customerId) fetchMetrics(customerId) }, 6 * 60 * 60 * 1000)
+    const interval = setInterval(() => { if (selectedIds.length > 0) fetchMetrics(selectedIds) }, 6 * 60 * 60 * 1000)
     return () => clearInterval(interval)
-  }, [customerId, fetchMetrics])
+  }, [selectedIds, fetchMetrics])
 
   const alertCount = metrics.filter(m => m.recommendation.level === 'alert').length
   const avgIs = metrics.filter(m => m.isActual !== null).length > 0
     ? metrics.reduce((a, m) => a + (m.isActual ?? 0), 0) / metrics.filter(m => m.isActual !== null).length
     : null
 
-  const handleLoad = () => {
-    const normalized = normalizeCustomerId(inputId)
-    if (!isValidCustomerId(normalized)) {
-      setError('Introduce un Customer ID válido (10 dígitos, sin guiones).')
-      setMetrics([])
-      return
-    }
-    setInputId(normalized)
-    setCustomerId(normalized)
-  }
-
   return (
     <div className="flex min-h-screen bg-bg-base">
 
       {/* Sidebar */}
       <AppSidebar
-        activeSection={view === 'cards' ? 'campaigns' : 'overview'}
-        view={view}
-        onViewChange={setView}
+        activeSection="overview"
         lastUpdate={lastUpdate}
         loading={loading}
-        onRefresh={() => fetchMetrics(customerId)}
-        customerId={customerId}
-        inputId={inputId}
-        onInputChange={setInputId}
-        onLoad={handleLoad}
+        onRefresh={() => fetchMetrics(selectedIds)}
       />
 
       {/* Contenido principal */}
-      <div className="ml-[220px] flex-1 flex flex-col min-h-screen">
+      <div className="ml-[240px] flex-1 flex flex-col min-h-screen">
 
         {/* ── Vista de detalle ─────────────────────────────────── */}
         {selectedCampaign ? (
           <CampaignDetailView
             campaign={selectedCampaign}
-            customerId={customerId}
+            customerId={selectedIds[0] ?? ''}
             onBack={() => setSelectedCampaign(null)}
           />
         ) : (
@@ -145,9 +134,9 @@ export function DashboardClient({ user }: Props) {
               <div className="px-6 py-3 flex items-center justify-between">
                 <div className="flex items-center gap-4">
                   <span className="num text-sm font-bold text-text-primary tracking-widest">AD_MONITOR</span>
-                  {customerId && (
+                  {selectedIds.length > 0 && (
                     <span className="num text-xs text-text-tertiary">
-                      #{customerId.replace(/-/g, '')}
+                      {selectedIds.length === 1 ? `#${selectedIds[0]}` : `${selectedIds.length} cuentas`}
                     </span>
                   )}
                 </div>
@@ -256,8 +245,8 @@ export function DashboardClient({ user }: Props) {
                   {view === 'table' ? (
                     <CampaignTable
                       metrics={metrics}
-                      customerId={customerId}
-                      onRefresh={() => fetchMetrics(customerId)}
+                      customerId={selectedIds[0] ?? ''}
+                      onRefresh={() => fetchMetrics(selectedIds)}
                       onSelectCampaign={setSelectedCampaign}
                     />
                   ) : (

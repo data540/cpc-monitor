@@ -2,7 +2,7 @@
 // Toda la lógica de llamadas a la API, portada directamente del script
 // que ya funciona en producción.
 
-import { CampaignMetrics, GoogleAdsCampaignRow, CpcDistributionData } from '@/types'
+import { CampaignMetrics, GoogleAdsCampaignRow, CpcDistributionData, AuctionInsightEntry, AuctionInsightsResult, GoogleAdsAccount } from '@/types'
 import { buildRecommendation } from './recommendations'
 
 // ── Mock data para desarrollo (sin scope adwords) ─────────────
@@ -584,4 +584,131 @@ function generateDistributionWeighted(
   }
 
   return distribution
+}
+
+// ── Accounts listing ──────────────────────────────────────────
+
+export async function getAccountsWithNames(
+  opts: Pick<FetchOptions, 'accessToken' | 'developerToken' | 'mccCustomerId'>
+): Promise<GoogleAdsAccount[]> {
+  const mccId = opts.mccCustomerId
+  if (!mccId) return []
+
+  const query = `
+    SELECT
+      customer_client.id,
+      customer_client.descriptive_name,
+      customer_client.currency_code,
+      customer_client.status
+    FROM customer_client
+    WHERE customer_client.manager = false
+      AND customer_client.status = 'ENABLED'
+  `
+
+  const res = await fetch(
+    `${ADS_API_BASE}/customers/${mccId}/googleAds:search`,
+    {
+      method:  'POST',
+      headers: {
+        'Authorization':   `Bearer ${opts.accessToken}`,
+        'developer-token': opts.developerToken,
+        'Content-Type':    'application/json',
+        'login-customer-id': mccId,
+      },
+      body: JSON.stringify({ query }),
+    }
+  )
+
+  if (!res.ok) return []
+
+  const data    = await res.json()
+  const results = data.results ?? []
+
+  return results.map((row: any) => ({
+    id:       String(row.customerClient?.id ?? ''),
+    name:     String(row.customerClient?.descriptiveName ?? row.customerClient?.id ?? ''),
+    currency: String(row.customerClient?.currencyCode ?? 'EUR'),
+  })).filter((a: GoogleAdsAccount) => a.id)
+}
+
+// ── Auction Insights ──────────────────────────────────────────
+
+export async function getAuctionInsights(
+  opts: FetchOptions,
+  dateRange: { start: string; end: string },
+  campaignId?: string
+): Promise<AuctionInsightsResult> {
+  const campaignFilter = campaignId ? `  AND campaign.id = ${campaignId}` : ''
+  const query = `
+    SELECT
+      auction_insight_stat.display_name,
+      auction_insight_stat.impression_share,
+      auction_insight_stat.overlap_rate,
+      auction_insight_stat.outranking_share,
+      auction_insight_stat.position_above_rate,
+      auction_insight_stat.top_of_page_rate,
+      auction_insight_stat.absolute_top_of_page_rate
+    FROM auction_insight_performance_view
+    WHERE segments.date BETWEEN '${dateRange.start}' AND '${dateRange.end}'
+    ${campaignFilter}
+  `
+
+  const res = await fetch(
+    `${ADS_API_BASE}/customers/${opts.customerId}/googleAds:search`,
+    {
+      method:  'POST',
+      headers: buildHeaders(opts),
+      body:    JSON.stringify({ query }),
+    }
+  )
+
+  if (!res.ok) {
+    const err = await res.text()
+    throw new Error(`Google Ads Auction Insights API error ${res.status}: ${err}`)
+  }
+
+  const data    = await res.json()
+  const results = data.results ?? []
+
+  if (results.length === 0) {
+    return { entries: [], dateRange, noData: true }
+  }
+
+  const parseMetric = (v: unknown): number => {
+    if (v === '--' || v === null || v === undefined) return 0
+    const n = Number(v)
+    return isNaN(n) ? 0 : n
+  }
+
+  const domainMap = new Map<string, AuctionInsightEntry>()
+
+  for (const row of results) {
+    const stat   = (row as any).auctionInsightStat ?? {}
+    const domain = (stat.displayName as string | undefined) ?? 'Unknown'
+    const isOwn  = domain === 'Your account'
+
+    const entry: AuctionInsightEntry = {
+      domain,
+      impressionShare:   parseMetric(stat.impressionShare),
+      overlapRate:       isOwn ? 0 : parseMetric(stat.overlapRate),
+      outrankedRate:     isOwn ? 0 : parseMetric(stat.outrankingShare),
+      positionAboveRate: isOwn ? 0 : parseMetric(stat.positionAboveRate),
+      topOfPageRate:     parseMetric(stat.topOfPageRate),
+      absTopOfPageRate:  parseMetric(stat.absoluteTopOfPageRate),
+      isOwnAccount:      isOwn,
+    }
+
+    const existing = domainMap.get(domain)
+    if (!existing || entry.impressionShare > existing.impressionShare) {
+      domainMap.set(domain, entry)
+    }
+  }
+
+  const entries = Array.from(domainMap.values()).sort((a, b) => {
+    if (a.isOwnAccount) return -1
+    if (b.isOwnAccount) return 1
+    return b.impressionShare - a.impressionShare
+  })
+
+  return { entries, dateRange, noData: false }
 }
