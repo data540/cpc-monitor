@@ -142,7 +142,7 @@ export function AppSidebar({
             target="_blank"
             rel="noopener noreferrer"
             title="Ayuda — Guía de la aplicación"
-            className="w-6 h-6 rounded-full border border-[#333] text-[#888] hover:text-cyan-DEFAULT hover:border-cyan-DEFAULT/50 transition-colors flex items-center justify-center num text-[11px] font-bold flex-shrink-0"
+            className="w-7 h-7 rounded-full border-2 border-cyan-DEFAULT/60 text-cyan-DEFAULT bg-cyan-DEFAULT/10 hover:bg-cyan-DEFAULT/25 hover:border-cyan-DEFAULT transition-all flex items-center justify-center num text-[13px] font-bold flex-shrink-0 shadow-[0_0_8px_rgba(0,200,200,0.3)]"
           >
             ?
           </a>
