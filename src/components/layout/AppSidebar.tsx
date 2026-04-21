@@ -1,6 +1,7 @@
 'use client'
 
 import { useState } from 'react'
+import Link from 'next/link'
 import { signOut } from 'next-auth/react'
 import { useAccountContext } from '@/contexts/AccountContext'
 import { ACCOUNTS_CONFIG, REGIONS, getIdsByRegion } from '@/lib/accounts-data'
@@ -20,10 +21,10 @@ export function NavItem({
   }`
 
   if (href) return (
-    <a href={href} className={base}>
+    <Link href={href} className={base}>
       <span className="text-base leading-none">{icon}</span>
       <span>{label}</span>
-    </a>
+    </Link>
   )
   return (
     <button onClick={onClick} className={base}>
