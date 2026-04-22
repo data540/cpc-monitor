@@ -4,7 +4,7 @@ import { useState } from 'react'
 import Link from 'next/link'
 import { signOut } from 'next-auth/react'
 import { useAccountContext } from '@/contexts/AccountContext'
-import { ACCOUNTS_CONFIG, REGIONS, getIdsByRegion } from '@/lib/accounts-data'
+import { ACCOUNTS_CONFIG, REGIONS } from '@/lib/accounts-data'
 
 // ── Nav item ──────────────────────────────────────────────────
 
@@ -207,7 +207,7 @@ function AccountSelector() {
 // ── Sidebar ───────────────────────────────────────────────────
 
 export interface AppSidebarProps {
-  activeSection: 'overview' | 'is-monitor' | 'cpc-analysis' | 'roas-tracker' | 'auction-insights' | 'alerts' | 'reports' | 'config'
+  activeSection: 'overview' | 'is-monitor' | 'cpc-analysis' | 'roas-tracker' | 'alerts' | 'reports' | 'config'
   lastUpdate:    Date | null
   loading:       boolean
   onRefresh:     () => void
@@ -245,9 +245,8 @@ export function AppSidebar({
         <NavItem icon="◎" label="IS Monitor"       active={activeSection === 'is-monitor'}       href="/dashboard/is-monitor" />
         <NavItem icon="💰" label="CPC Analysis"    active={activeSection === 'cpc-analysis'}     href="/dashboard/cpc-analysis" />
         <NavItem icon="🎯" label="ROAS Tracker"    active={activeSection === 'roas-tracker'}     href="/dashboard/roas-tracker" />
-        <NavItem icon="📉" label="Auction Insights" active={activeSection === 'auction-insights'} href="/dashboard/auction-insights" />
 
-        <div className="pt-3 pb-1">
+<div className="pt-3 pb-1">
           <p className="num text-[10px] text-[#666] tracking-[0.2em] uppercase px-3 mb-2 font-semibold">System</p>
         </div>
 

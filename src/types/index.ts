@@ -120,20 +120,3 @@ export interface CpcDistributionData {
     percentage: number
   }>
 }
-
-export interface AuctionInsightEntry {
-  domain:            string
-  impressionShare:   number
-  overlapRate:       number
-  outrankedRate:     number
-  positionAboveRate: number
-  topOfPageRate:     number
-  absTopOfPageRate:  number
-  isOwnAccount:      boolean
-}
-
-export interface AuctionInsightsResult {
-  entries:   AuctionInsightEntry[]
-  dateRange: { start: string; end: string }
-  noData:    boolean
-}
