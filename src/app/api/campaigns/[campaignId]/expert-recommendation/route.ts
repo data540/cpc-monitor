@@ -73,6 +73,7 @@ export async function GET(
       absoluteTopImpressionPct: null,
       targetRoas:               snapshot.targetRoas,
       realRoas:                 snapshot.realRoas,
+      dailyBudgetEur:           null,
       recommendation:           { level: 'ok', message: '', parts: [] },
     }
 
