@@ -23,6 +23,7 @@ export interface CampaignMetrics {
   absoluteTopImpressionPct:number | null   // 0-1  Primera posición absoluta
   targetRoas:              number | null
   realRoas:                number | null
+  dailyBudgetEur:          number | null   // EUR — null si no disponible
   recommendation:          Recommendation
   capturedAt?:             string
   _debug?:                 Record<string, any>
@@ -65,6 +66,7 @@ export interface GoogleAdsCampaignRow {
   'metrics.search_impression_share':                string
   'metrics.conversions_value':                      string
   'metrics.conversions':                            string
+  'campaign_budget.amount_micros':                  string
 }
 
 // Recomendación experta de techo CPC

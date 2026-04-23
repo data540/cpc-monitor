@@ -14,7 +14,11 @@ export async function GET(request: Request) {
 
   const userId = (session.user as any).id
   const { searchParams } = new URL(request.url)
-  const customerId = searchParams.get('customerId') ?? ''
+  const customerId    = searchParams.get('customerId') ?? ''
+  const rawDays       = searchParams.get('days')
+  const startDate     = searchParams.get('startDate') ?? undefined
+  const endDate       = searchParams.get('endDate') ?? undefined
+  const dateRangeDays = rawDays ? parseInt(rawDays, 10) : 30
 
   if (!customerId) {
     return NextResponse.json({ error: 'customerId requerido' }, { status: 400 })
@@ -45,7 +49,9 @@ export async function GET(request: Request) {
       mccCustomerId:  process.env.GOOGLE_ADS_MCC_CUSTOMER_ID,
       developerToken: process.env.GOOGLE_ADS_DEVELOPER_TOKEN!,
       manualCeilings,
-      dateRangeDays:  30,
+      dateRangeDays,
+      startDate,
+      endDate,
     })
 
     // Guardar snapshot en BD para historial
@@ -72,7 +78,11 @@ export async function GET(request: Request) {
       })
     }
 
-    return NextResponse.json({ metrics })
+    const numDays = startDate && endDate
+      ? Math.round((new Date(endDate).getTime() - new Date(startDate).getTime()) / 86400000)
+      : dateRangeDays
+
+    return NextResponse.json({ metrics, numDays })
   } catch (e: any) {
     console.error('[api/campaigns]', e)
     return NextResponse.json({ error: e.message }, { status: 500 })

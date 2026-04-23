@@ -1,6 +1,7 @@
 'use client'
 
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
+import clsx from 'clsx'
 import { CampaignCard } from './CampaignCard'
 import { CampaignTable } from './CampaignTable'
 import { CampaignDetailView } from './CampaignDetailView'
@@ -16,6 +17,14 @@ const ENV_CUSTOMER_ID = process.env.NEXT_PUBLIC_GOOGLE_ADS_CUSTOMER_ID ?? ''
 function normalizeCustomerId(value: string): string { return value.replace(/-/g, '').trim() }
 function isValidCustomerId(value: string): boolean { return /^\d{10}$/.test(normalizeCustomerId(value)) }
 const DEFAULT_CUSTOMER_ID = isValidCustomerId(ENV_CUSTOMER_ID) ? normalizeCustomerId(ENV_CUSTOMER_ID) : ''
+
+// ── Filtro de fecha ───────────────────────────────────────────
+
+type DatePreset = '7days' | '30days' | '90days' | 'custom'
+
+function getPresetDays(p: Exclude<DatePreset, 'custom'>) {
+  return p === '7days' ? 7 : p === '30days' ? 30 : 90
+}
 
 // ── Summary Card ──────────────────────────────────────────────
 
@@ -40,7 +49,7 @@ function SummaryCard({
           {icon}
         </span>
       )}
-      <p className="num text-[9px] text-text-tertiary uppercase tracking-[0.2em] mb-2">{label}</p>
+      <p className="num text-[9px] text-white uppercase tracking-[0.2em] mb-2">{label}</p>
       <p className={`num text-2xl font-bold ${accentColor} mb-1`}>{value}</p>
       {sub && <p className="num text-[10px] text-text-tertiary">{sub}</p>}
       {/* Progress bar */}
@@ -64,20 +73,46 @@ export function DashboardClient({ user }: Props) {
   const [lastUpdate,       setLastUpdate]       = useState<Date | null>(null)
   const [view,             setView]             = useState<'cards' | 'table'>('table')
   const [selectedCampaign, setSelectedCampaign] = useState<CampaignMetrics | null>(null)
+  const [datePreset,       setDatePreset]       = useState<DatePreset>('30days')
+  const [customStart,      setCustomStart]      = useState('')
+  const [customEnd,        setCustomEnd]        = useState('')
+  const [numDays,          setNumDays]          = useState(30)
 
-  const fetchMetrics = useCallback(async (cids: string[]) => {
+  // Refs para que el auto-refresh use siempre los valores actuales del filtro
+  const datePresetRef  = useRef(datePreset)
+  const customStartRef = useRef(customStart)
+  const customEndRef   = useRef(customEnd)
+  useEffect(() => { datePresetRef.current  = datePreset  }, [datePreset])
+  useEffect(() => { customStartRef.current = customStart }, [customStart])
+  useEffect(() => { customEndRef.current   = customEnd   }, [customEnd])
+
+  const fetchMetrics = useCallback(async (
+    cids:   string[],
+    preset: DatePreset,
+    cStart: string,
+    cEnd:   string,
+  ) => {
     const valid = cids.filter(isValidCustomerId)
     if (!valid.length) return
     setLoading(true); setError(null); setNeedsReauth(false)
+
+    let dateParam: string
+    if (preset === 'custom' && cStart && cEnd) {
+      dateParam = `startDate=${cStart}&endDate=${cEnd}`
+    } else {
+      dateParam = `days=${getPresetDays(preset as Exclude<DatePreset, 'custom'>)}`
+    }
+
     try {
       const results = await Promise.all(
         valid.map(async cid => {
-          const res  = await fetch(`/api/campaigns?customerId=${normalizeCustomerId(cid)}`)
+          const res  = await fetch(`/api/campaigns?customerId=${normalizeCustomerId(cid)}&${dateParam}`)
           const data = await res.json()
           if (!res.ok) {
             if (data.reauth) setNeedsReauth(true)
             throw new Error(data.error ?? 'Error desconocido')
           }
+          if (typeof data.numDays === 'number') setNumDays(data.numDays)
           return data.metrics as CampaignMetrics[]
         })
       )
@@ -90,14 +125,20 @@ export function DashboardClient({ user }: Props) {
     }
   }, [])
 
+  // Disparar fetch cuando cambia la selección de cuentas o el filtro de fecha
   useEffect(() => {
-    if (selectedIds.length > 0) fetchMetrics(selectedIds)
-    else setMetrics([])
-  }, [selectedIds, fetchMetrics])
+    if (!selectedIds.length) { setMetrics([]); return }
+    if (datePreset === 'custom' && (!customStart || !customEnd)) return
+    fetchMetrics(selectedIds, datePreset, customStart, customEnd)
+  }, [selectedIds, datePreset, customStart, customEnd, fetchMetrics])
 
-  // Auto-refresh cada 6 horas
+  // Auto-refresh cada 6 horas usando siempre el filtro activo en ese momento
   useEffect(() => {
-    const interval = setInterval(() => { if (selectedIds.length > 0) fetchMetrics(selectedIds) }, 6 * 60 * 60 * 1000)
+    const interval = setInterval(() => {
+      if (selectedIds.length > 0) {
+        fetchMetrics(selectedIds, datePresetRef.current, customStartRef.current, customEndRef.current)
+      }
+    }, 6 * 60 * 60 * 1000)
     return () => clearInterval(interval)
   }, [selectedIds, fetchMetrics])
 
@@ -105,6 +146,10 @@ export function DashboardClient({ user }: Props) {
   const avgIs = metrics.filter(m => m.isActual !== null).length > 0
     ? metrics.reduce((a, m) => a + (m.isActual ?? 0), 0) / metrics.filter(m => m.isActual !== null).length
     : null
+
+  const periodLabel = datePreset === 'custom' && customStart && customEnd
+    ? `${customStart} → ${customEnd}`
+    : `últimos ${numDays} días`
 
   return (
     <div className="flex min-h-screen bg-bg-base">
@@ -114,7 +159,7 @@ export function DashboardClient({ user }: Props) {
         activeSection="overview"
         lastUpdate={lastUpdate}
         loading={loading}
-        onRefresh={() => fetchMetrics(selectedIds)}
+        onRefresh={() => fetchMetrics(selectedIds, datePreset, customStart, customEnd)}
       />
 
       {/* Contenido principal */}
@@ -209,7 +254,7 @@ export function DashboardClient({ user }: Props) {
                       <SummaryCard
                         label="Total Clicks"
                         value={metrics.reduce((a, m) => a + m.clicks, 0).toLocaleString('es-ES')}
-                        sub="últimos 30 días"
+                        sub={periodLabel}
                         icon="↗"
                         highlight="cyan"
                       />
@@ -242,11 +287,58 @@ export function DashboardClient({ user }: Props) {
 
               {!loading && metrics.length > 0 && (
                 <>
+                  {/* ── Filtro de fecha ───────────────────────── */}
+                  <div className="flex items-center gap-2 mb-4 flex-wrap">
+                    {(['7days', '30days', '90days'] as const).map(p => (
+                      <button
+                        key={p}
+                        onClick={() => setDatePreset(p)}
+                        className={clsx(
+                          'num text-xs px-3 py-1.5 rounded transition-colors',
+                          datePreset === p
+                            ? 'bg-cyan-DEFAULT/15 border border-cyan-DEFAULT/40 text-cyan-DEFAULT'
+                            : 'bg-bg-card border border-bg-border text-text-tertiary hover:text-text-secondary'
+                        )}
+                      >
+                        {p === '7days' ? '7 días' : p === '30days' ? '30 días' : '90 días'}
+                      </button>
+                    ))}
+                    <button
+                      onClick={() => setDatePreset('custom')}
+                      className={clsx(
+                        'num text-xs px-3 py-1.5 rounded transition-colors',
+                        datePreset === 'custom'
+                          ? 'bg-cyan-DEFAULT/15 border border-cyan-DEFAULT/40 text-cyan-DEFAULT'
+                          : 'bg-bg-card border border-bg-border text-text-tertiary hover:text-text-secondary'
+                      )}
+                    >
+                      Personalizado
+                    </button>
+                    {datePreset === 'custom' && (
+                      <div className="flex items-center gap-2 ml-1">
+                        <input
+                          type="date"
+                          value={customStart}
+                          onChange={e => setCustomStart(e.target.value)}
+                          className="num text-xs bg-bg-card border border-bg-border rounded px-2 py-1.5 text-text-primary outline-none focus:border-cyan-DEFAULT/40"
+                        />
+                        <span className="text-text-tertiary text-xs">→</span>
+                        <input
+                          type="date"
+                          value={customEnd}
+                          onChange={e => setCustomEnd(e.target.value)}
+                          className="num text-xs bg-bg-card border border-bg-border rounded px-2 py-1.5 text-text-primary outline-none focus:border-cyan-DEFAULT/40"
+                        />
+                      </div>
+                    )}
+                  </div>
+
                   {view === 'table' ? (
                     <CampaignTable
                       metrics={metrics}
                       customerId={selectedIds[0] ?? ''}
-                      onRefresh={() => fetchMetrics(selectedIds)}
+                      numDays={numDays}
+                      onRefresh={() => fetchMetrics(selectedIds, datePreset, customStart, customEnd)}
                       onSelectCampaign={setSelectedCampaign}
                     />
                   ) : (

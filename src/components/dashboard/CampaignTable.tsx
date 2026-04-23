@@ -1,12 +1,13 @@
 'use client'
 
-import { useState, useMemo, useRef, useCallback } from 'react'
+import { useState, useMemo, useRef, useCallback, useEffect } from 'react'
 import { CampaignMetrics } from '@/types'
 import clsx from 'clsx'
 
 interface Props {
   metrics:           CampaignMetrics[]
   customerId:        string
+  numDays:           number
   onRefresh?:        () => void
   onSelectCampaign?: (campaign: CampaignMetrics) => void
 }
@@ -35,6 +36,9 @@ const DEFAULT_WIDTHS: Record<string, number> = {
   absTop:   92,
   rOb:      82,
   rReal:    82,
+  budget:  110,
+  estCost: 110,
+  spendPct: 90,
   status:  170,
 }
 
@@ -49,7 +53,7 @@ function pct(v: number | null)             { return v !== null ? `${Math.round(v
 function eur(v: number | null)             { return v !== null ? `${v.toFixed(2)} €` : '—' }
 function num(v: number | null, d = 2)      { return v !== null ? v.toFixed(d) : '—' }
 
-export function CampaignTable({ metrics, customerId, onRefresh, onSelectCampaign }: Props) {
+export function CampaignTable({ metrics, customerId, numDays, onRefresh, onSelectCampaign }: Props) {
   const [selected,    setSelected]    = useState<Set<string>>(new Set())
   const [newCpc,      setNewCpc]      = useState('')
   const [sending,     setSending]     = useState(false)
@@ -58,6 +62,38 @@ export function CampaignTable({ metrics, customerId, onRefresh, onSelectCampaign
   const [sortAsc,     setSortAsc]     = useState(true)
   const [colWidths,   setColWidths]   = useState(DEFAULT_WIDTHS)
   const [search,      setSearch]      = useState('')
+
+  // ── Scrollbar lateral (proxy nativo) ─────────────────────────
+  const tableScrollRef = useRef<HTMLDivElement>(null)
+  const proxyRef       = useRef<HTMLDivElement>(null)
+  const isSyncing      = useRef(false)
+
+  const onTableScroll = useCallback(() => {
+    if (isSyncing.current) return
+    const table = tableScrollRef.current
+    const proxy = proxyRef.current
+    if (!table || !proxy) return
+    isSyncing.current = true
+    proxy.scrollLeft = table.scrollLeft
+    requestAnimationFrame(() => { isSyncing.current = false })
+  }, [])
+
+  const onProxyScroll = useCallback(() => {
+    if (isSyncing.current) return
+    const table = tableScrollRef.current
+    const proxy = proxyRef.current
+    if (!table || !proxy) return
+    isSyncing.current = true
+    table.scrollLeft = proxy.scrollLeft
+    requestAnimationFrame(() => { isSyncing.current = false })
+  }, [])
+
+  useEffect(() => {
+    const table = tableScrollRef.current
+    if (!table) return
+    table.addEventListener('scroll', onTableScroll, { passive: true })
+    return () => table.removeEventListener('scroll', onTableScroll)
+  }, [onTableScroll])
 
   // ── Ordenación ──────────────────────────────────────────────
   const sorted = useMemo(() => {
@@ -257,12 +293,16 @@ export function CampaignTable({ metrics, customerId, onRefresh, onSelectCampaign
       </div>
 
       {/* ── Tabla ────────────────────────────────────────────── */}
-      <div className="overflow-x-auto rounded-lg border border-[#1e1e1e]">
+      <div
+        ref={tableScrollRef}
+        className="overflow-auto rounded-t-lg border border-[#1e1e1e] hide-scrollbar"
+        style={{ maxHeight: 'calc(100vh - 380px)' }}
+      >
         <table
           style={{ tableLayout: 'fixed', width: totalWidth, minWidth: '100%' }}
           className="border-collapse text-sm"
         >
-          <thead className="bg-[#111] border-b border-[#1e1e1e]">
+          <thead className="bg-[#111] border-b border-[#1e1e1e] sticky top-0 z-20">
             <tr>
               {/* Checkbox all */}
               <th
@@ -306,6 +346,36 @@ export function CampaignTable({ metrics, customerId, onRefresh, onSelectCampaign
               <Th label="ROAS Obj"    k="targetRoas"              col="rOb"    right />
               <Th label="ROAS Real"   k="realRoas"                col="rReal"  right />
 
+              {/* Presupuesto diario */}
+              <th style={{ width: colWidths.budget, minWidth: colWidths.budget, position: 'relative' }}
+                  className="border-r border-[#222] select-none">
+                <div className="px-3 py-2.5 text-xs font-semibold text-[#c0c0c0] uppercase tracking-wide text-right">
+                  Presup. diario
+                </div>
+                <div onMouseDown={ev => startResize('budget', ev)}
+                     className="absolute right-0 top-0 h-full w-1.5 cursor-col-resize hover:bg-blue-500/40 transition-colors z-10" />
+              </th>
+
+              {/* Coste estimado */}
+              <th style={{ width: colWidths.estCost, minWidth: colWidths.estCost, position: 'relative' }}
+                  className="border-r border-[#222] select-none">
+                <div className="px-3 py-2.5 text-xs font-semibold text-[#c0c0c0] uppercase tracking-wide text-right">
+                  Coste estimado
+                </div>
+                <div onMouseDown={ev => startResize('estCost', ev)}
+                     className="absolute right-0 top-0 h-full w-1.5 cursor-col-resize hover:bg-blue-500/40 transition-colors z-10" />
+              </th>
+
+              {/* % Gasto/Estimado */}
+              <th style={{ width: colWidths.spendPct, minWidth: colWidths.spendPct, position: 'relative' }}
+                  className="border-r border-[#222] select-none">
+                <div className="px-3 py-2.5 text-xs font-semibold text-[#c0c0c0] uppercase tracking-wide text-right">
+                  % Gasto/Est.
+                </div>
+                <div onMouseDown={ev => startResize('spendPct', ev)}
+                     className="absolute right-0 top-0 h-full w-1.5 cursor-col-resize hover:bg-blue-500/40 transition-colors z-10" />
+              </th>
+
               {/* Estado */}
               <th
                 style={{ width: colWidths.status, minWidth: colWidths.status, position: 'relative' }}
@@ -320,7 +390,7 @@ export function CampaignTable({ metrics, customerId, onRefresh, onSelectCampaign
           <tbody className="divide-y divide-[#161616]">
             {filtered.length === 0 && (
               <tr>
-                <td colSpan={15} className="px-6 py-10 text-center text-[#555] text-sm">
+                <td colSpan={18} className="px-6 py-10 text-center text-[#555] text-sm">
                   No hay campañas que coincidan con «{search}»
                 </td>
               </tr>
@@ -435,6 +505,33 @@ export function CampaignTable({ metrics, customerId, onRefresh, onSelectCampaign
                     ) : '—'}
                   </td>
 
+                  {/* Presupuesto diario / Coste estimado / % Gasto */}
+                  {(() => {
+                    const estimatedCost = m.dailyBudgetEur !== null ? m.dailyBudgetEur * numDays : null
+                    const spendVsEstPct = estimatedCost && estimatedCost > 0 ? (m.costEur / estimatedCost) * 100 : null
+                    return (
+                      <>
+                        <td className="px-3 py-2.5 border-r border-[#161616] text-right num text-text-secondary">
+                          {eur(m.dailyBudgetEur)}
+                        </td>
+                        <td className="px-3 py-2.5 border-r border-[#161616] text-right num text-text-secondary">
+                          {eur(estimatedCost)}
+                        </td>
+                        <td className="px-3 py-2.5 border-r border-[#161616] text-right num">
+                          {spendVsEstPct !== null ? (
+                            <span className={clsx(
+                              'font-medium',
+                              spendVsEstPct > 100 ? 'text-red-DEFAULT' :
+                              spendVsEstPct > 90  ? 'text-amber-DEFAULT' : 'text-green-DEFAULT'
+                            )}>
+                              {spendVsEstPct.toFixed(1)}%
+                            </span>
+                          ) : '—'}
+                        </td>
+                      </>
+                    )
+                  })()}
+
                   {/* Estado */}
                   <td className="px-3 py-2.5">
                     <div className="flex flex-col gap-1">
@@ -467,6 +564,16 @@ export function CampaignTable({ metrics, customerId, onRefresh, onSelectCampaign
             })}
           </tbody>
         </table>
+      </div>
+
+      {/* ── Barra de scroll lateral (proxy nativo) ───────────── */}
+      <div
+        ref={proxyRef}
+        className="table-proxy-scroll overflow-x-auto overflow-y-hidden border-x border-b border-[#1e1e1e] rounded-b-lg"
+        style={{ height: 18 }}
+        onScroll={onProxyScroll}
+      >
+        <div style={{ width: totalWidth, height: 1 }} />
       </div>
     </div>
   )

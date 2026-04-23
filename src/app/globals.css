@@ -7,9 +7,9 @@
   --bg-surface: #111111;
   --bg-card:    #161616;
   --bg-border:  #1e1e1e;
-  --text-1:     #e8e8e8;
-  --text-2:     #888888;
-  --text-3:     #444444;
+  --text-1:     #ffffff;
+  --text-2:     #d8d8d8;
+  --text-3:     #b0b0b0;
   --cyan:       #00D4FF;
   --green:      #22c55e;
   --red:        #ef4444;
@@ -26,8 +26,9 @@ body {
 /* Scrollbar industrial */
 ::-webkit-scrollbar       { width: 4px; height: 4px; }
 ::-webkit-scrollbar-track { background: var(--bg-surface); }
-::-webkit-scrollbar-thumb { background: #2a2a2a; border-radius: 2px; }
-::-webkit-scrollbar-thumb:hover { background: #3a3a3a; }
+::-webkit-scrollbar-thumb { background: #3a3a3a; border-radius: 2px; }
+::-webkit-scrollbar-thumb:hover { background: #555555; }
+
 
 /* Clase de número monoespaciado */
 .num { font-family: 'JetBrains Mono', monospace; }
@@ -52,6 +53,17 @@ body {
   50%       { opacity: 0.6; }
 }
 .pulse-cyan { animation: pulse-cyan 2s ease-in-out infinite; }
+
+/* Scrollbar proxy para tabla (nativo, visible) */
+.table-proxy-scroll::-webkit-scrollbar        { height: 10px; }
+.table-proxy-scroll::-webkit-scrollbar-track  { background: #0f0f0f; }
+.table-proxy-scroll::-webkit-scrollbar-thumb  { background: #606060; border-radius: 5px; }
+.table-proxy-scroll::-webkit-scrollbar-thumb:hover { background: #888; }
+.table-proxy-scroll { scrollbar-width: thin; scrollbar-color: #606060 #0f0f0f; }
+
+/* Ocultar scrollbar nativo en el contenedor de la tabla */
+.hide-scrollbar::-webkit-scrollbar { display: none; }
+.hide-scrollbar { scrollbar-width: none; }
 
 /* Barra de progreso cyan */
 .progress-bar {

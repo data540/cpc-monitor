@@ -8,11 +8,11 @@ import { buildRecommendation } from './recommendations'
 // ── Mock data para desarrollo (sin scope adwords) ─────────────
 
 const MOCK_CAMPAIGNS: CampaignMetrics[] = [
-  { campaignId: 'mock-1', campaignName: 'Brand - Exact',         cpcCeiling: 0.80, avgCpc: 0.62, cpcUsagePct: 77.5,  clicks: 1240, impressions: 18500, ctr: 6.70, costEur: 769.0,  isActual: 0.82, isLostBudget: 0.03, isLostRank: 0.15, topImpressionPct: 0.71, absoluteTopImpressionPct: 0.48, targetRoas: 4.5, realRoas: 5.1,  recommendation: buildRecommendation({ cpcUsagePct: 77.5,  isActual: 0.82, cpcCeiling: 0.80, realRoas: 5.1,  targetRoas: 4.5 }) },
-  { campaignId: 'mock-2', campaignName: 'Competencia - BMM',     cpcCeiling: 1.20, avgCpc: 1.15, cpcUsagePct: 95.8,  clicks:  430, impressions:  9200, ctr: 4.67, costEur: 494.5,  isActual: 0.41, isLostBudget: 0.12, isLostRank: 0.47, topImpressionPct: 0.38, absoluteTopImpressionPct: 0.21, targetRoas: 3.0, realRoas: 2.8,  recommendation: buildRecommendation({ cpcUsagePct: 95.8,  isActual: 0.41, cpcCeiling: 1.20, realRoas: 2.8,  targetRoas: 3.0 }) },
-  { campaignId: 'mock-3', campaignName: 'Genérico - Amplia',     cpcCeiling: 0.60, avgCpc: 0.38, cpcUsagePct: 63.3,  clicks:  870, impressions: 24100, ctr: 3.61, costEur: 330.6,  isActual: 0.67, isLostBudget: 0.28, isLostRank: 0.05, topImpressionPct: 0.54, absoluteTopImpressionPct: 0.31, targetRoas: 5.0, realRoas: 6.2,  recommendation: buildRecommendation({ cpcUsagePct: 63.3,  isActual: 0.67, cpcCeiling: 0.60, realRoas: 6.2,  targetRoas: 5.0 }) },
-  { campaignId: 'mock-4', campaignName: 'Remarketing - Dinámico',cpcCeiling: null, avgCpc: 0.29, cpcUsagePct: null,   clicks:  310, impressions:  5400, ctr: 5.74, costEur:  89.9,  isActual: 0.91, isLostBudget: 0.04, isLostRank: 0.05, topImpressionPct: 0.88, absoluteTopImpressionPct: 0.72, targetRoas: 8.0, realRoas: 9.4,  recommendation: buildRecommendation({ cpcUsagePct: null,   isActual: 0.91, cpcCeiling: null, realRoas: 9.4,  targetRoas: 8.0 }) },
-  { campaignId: 'mock-5', campaignName: 'Shopping - Max ROAS',   cpcCeiling: 1.50, avgCpc: 1.49, cpcUsagePct: 99.3,  clicks:  205, impressions:  3100, ctr: 6.61, costEur: 305.5,  isActual: 0.55, isLostBudget: 0.09, isLostRank: 0.36, topImpressionPct: 0.44, absoluteTopImpressionPct: 0.29, targetRoas: 6.0, realRoas: 4.1,  recommendation: buildRecommendation({ cpcUsagePct: 99.3,  isActual: 0.55, cpcCeiling: 1.50, realRoas: 4.1,  targetRoas: 6.0 }) },
+  { campaignId: 'mock-1', campaignName: 'Brand - Exact',         cpcCeiling: 0.80, avgCpc: 0.62, cpcUsagePct: 77.5,  clicks: 1240, impressions: 18500, ctr: 6.70, costEur: 769.0,  isActual: 0.82, isLostBudget: 0.03, isLostRank: 0.15, topImpressionPct: 0.71, absoluteTopImpressionPct: 0.48, targetRoas: 4.5, realRoas: 5.1,  dailyBudgetEur: 50.00,  recommendation: buildRecommendation({ cpcUsagePct: 77.5,  isActual: 0.82, cpcCeiling: 0.80, realRoas: 5.1,  targetRoas: 4.5 }) },
+  { campaignId: 'mock-2', campaignName: 'Competencia - BMM',     cpcCeiling: 1.20, avgCpc: 1.15, cpcUsagePct: 95.8,  clicks:  430, impressions:  9200, ctr: 4.67, costEur: 494.5,  isActual: 0.41, isLostBudget: 0.12, isLostRank: 0.47, topImpressionPct: 0.38, absoluteTopImpressionPct: 0.21, targetRoas: 3.0, realRoas: 2.8,  dailyBudgetEur: 30.00,  recommendation: buildRecommendation({ cpcUsagePct: 95.8,  isActual: 0.41, cpcCeiling: 1.20, realRoas: 2.8,  targetRoas: 3.0 }) },
+  { campaignId: 'mock-3', campaignName: 'Genérico - Amplia',     cpcCeiling: 0.60, avgCpc: 0.38, cpcUsagePct: 63.3,  clicks:  870, impressions: 24100, ctr: 3.61, costEur: 330.6,  isActual: 0.67, isLostBudget: 0.28, isLostRank: 0.05, topImpressionPct: 0.54, absoluteTopImpressionPct: 0.31, targetRoas: 5.0, realRoas: 6.2,  dailyBudgetEur: 20.00,  recommendation: buildRecommendation({ cpcUsagePct: 63.3,  isActual: 0.67, cpcCeiling: 0.60, realRoas: 6.2,  targetRoas: 5.0 }) },
+  { campaignId: 'mock-4', campaignName: 'Remarketing - Dinámico',cpcCeiling: null, avgCpc: 0.29, cpcUsagePct: null,   clicks:  310, impressions:  5400, ctr: 5.74, costEur:  89.9,  isActual: 0.91, isLostBudget: 0.04, isLostRank: 0.05, topImpressionPct: 0.88, absoluteTopImpressionPct: 0.72, targetRoas: 8.0, realRoas: 9.4,  dailyBudgetEur: null,   recommendation: buildRecommendation({ cpcUsagePct: null,   isActual: 0.91, cpcCeiling: null, realRoas: 9.4,  targetRoas: 8.0 }) },
+  { campaignId: 'mock-5', campaignName: 'Shopping - Max ROAS',   cpcCeiling: 1.50, avgCpc: 1.49, cpcUsagePct: 99.3,  clicks:  205, impressions:  3100, ctr: 6.61, costEur: 305.5,  isActual: 0.55, isLostBudget: 0.09, isLostRank: 0.36, topImpressionPct: 0.44, absoluteTopImpressionPct: 0.29, targetRoas: 6.0, realRoas: 4.1,  dailyBudgetEur: 15.00,  recommendation: buildRecommendation({ cpcUsagePct: 99.3,  isActual: 0.55, cpcCeiling: 1.50, realRoas: 4.1,  targetRoas: 6.0 }) },
 ]
 
 const ADS_API_BASE = 'https://googleads.googleapis.com/v23'
@@ -24,6 +24,8 @@ interface FetchOptions {
   developerToken:  string
   manualCeilings?: Record<string, number>
   dateRangeDays?:  number
+  startDate?:      string       // YYYY-MM-DD — override de rango personalizado
+  endDate?:        string       // YYYY-MM-DD — override de rango personalizado
 }
 
 // ── Headers base para todas las llamadas ─────────────────────
@@ -130,6 +132,7 @@ async function fetchCampaignRows(
       campaign.bidding_strategy,
       campaign.target_roas.target_roas,
       campaign.target_roas.cpc_bid_ceiling_micros,
+      campaign_budget.amount_micros,
       bidding_strategy.name,
       bidding_strategy.target_roas.target_roas,
       bidding_strategy.target_roas.cpc_bid_ceiling_micros,
@@ -175,7 +178,9 @@ async function fetchCampaignRows(
 
 export async function getCampaignMetrics(opts: FetchOptions): Promise<CampaignMetrics[]> {
   const days      = opts.dateRangeDays ?? 30
-  const dateRange = buildDateRange(days)
+  const dateRange = (opts.startDate && opts.endDate)
+    ? { start: opts.startDate, end: opts.endDate }
+    : buildDateRange(days)
 
   // Cargar techos de cartera
   const portfolioCeilings = await loadPortfolioCeilings(opts)
@@ -184,7 +189,7 @@ export async function getCampaignMetrics(opts: FetchOptions): Promise<CampaignMe
   // Obtener filas de métricas
   const rows = await fetchCampaignRows(opts, dateRange)
 
-  return rows.map((row: any) => {
+  return rows.map((row: any, rowIdx: number) => {
     const campaignName = row.campaign?.name ?? ''
 
     // CPC techo: nivel campaña → portfolio inline (JOIN en GAQL) → lookup cartera → manual
@@ -252,6 +257,16 @@ export async function getCampaignMetrics(opts: FetchOptions): Promise<CampaignMe
 
     const realRoas = costEur > 0 ? Math.round((convValue / costEur) * 100) / 100 : null
 
+    const budgetMicros  = Number(
+      row.campaignBudget?.amountMicros ??
+      row.campaign_budget?.amount_micros ??
+      0
+    )
+    const dailyBudgetEur = budgetMicros > 0 ? Math.round(budgetMicros / 1e4) / 100 : null
+    if (rowIdx === 0) {
+      console.log('[google-ads] campaignBudget raw (primer row):', JSON.stringify(row.campaignBudget), '| budgetMicros:', budgetMicros)
+    }
+
     return {
       campaignId:               row.campaign?.id ?? '',
       campaignName,
@@ -269,6 +284,7 @@ export async function getCampaignMetrics(opts: FetchOptions): Promise<CampaignMe
       absoluteTopImpressionPct,
       targetRoas:               targetRoas || null,
       realRoas,
+      dailyBudgetEur,
       recommendation:           buildRecommendation({ cpcUsagePct, isActual, cpcCeiling, realRoas, targetRoas }),
       _debug: {
         portfolioRef,
@@ -283,6 +299,8 @@ export async function getCampaignMetrics(opts: FetchOptions): Promise<CampaignMe
                                 : portfolioMatch?.cpcCeiling ? 'portfolio_lookup'
                                 : manualCeilings[campaignName] ? 'manual'
                                 : 'none',
+        rawCampaignBudget:      row.campaignBudget,
+        budgetMicros,
       },
     }
   })
