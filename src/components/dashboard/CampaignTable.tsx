@@ -16,8 +16,8 @@ type SortKey = keyof Pick<
   CampaignMetrics,
   'campaignName' | 'cpcCeiling' | 'avgCpc' | 'cpcUsagePct' | 'clicks' |
   'impressions' | 'ctr' | 'costEur' | 'isActual' | 'topImpressionPct' |
-  'absoluteTopImpressionPct' | 'targetRoas' | 'realRoas'
->
+  'absoluteTopImpressionPct' | 'targetRoas' | 'realRoas' | 'dailyBudgetEur'
+> | 'estCost' | 'spendPct'
 
 // ── Anchos por defecto de columnas (px) ──────────────────────
 
@@ -96,15 +96,24 @@ export function CampaignTable({ metrics, customerId, numDays, onRefresh, onSelec
   }, [onTableScroll])
 
   // ── Ordenación ──────────────────────────────────────────────
+  const getSortValue = (m: CampaignMetrics, key: SortKey): number | string => {
+    if (key === 'estCost') return m.dailyBudgetEur !== null ? m.dailyBudgetEur * numDays : -Infinity
+    if (key === 'spendPct') {
+      const est = m.dailyBudgetEur !== null ? m.dailyBudgetEur * numDays : null
+      return est && est > 0 ? (m.costEur / est) * 100 : -Infinity
+    }
+    return (m[key as keyof CampaignMetrics] as number | string | null) ?? -Infinity
+  }
+
   const sorted = useMemo(() => {
     return [...metrics].sort((a, b) => {
-      const av = a[sortKey] ?? -Infinity
-      const bv = b[sortKey] ?? -Infinity
+      const av = getSortValue(a, sortKey)
+      const bv = getSortValue(b, sortKey)
       if (av < bv) return sortAsc ? -1 : 1
       if (av > bv) return sortAsc ? 1 : -1
       return 0
     })
-  }, [metrics, sortKey, sortAsc])
+  }, [metrics, sortKey, sortAsc, numDays])
 
   const toggleSort = (key: SortKey) => {
     if (key === sortKey) setSortAsc(a => !a)
@@ -346,35 +355,9 @@ export function CampaignTable({ metrics, customerId, numDays, onRefresh, onSelec
               <Th label="ROAS Obj"    k="targetRoas"              col="rOb"    right />
               <Th label="ROAS Real"   k="realRoas"                col="rReal"  right />
 
-              {/* Presupuesto diario */}
-              <th style={{ width: colWidths.budget, minWidth: colWidths.budget, position: 'relative' }}
-                  className="border-r border-[#222] select-none">
-                <div className="px-3 py-2.5 text-xs font-semibold text-[#c0c0c0] uppercase tracking-wide text-right">
-                  Presup. diario
-                </div>
-                <div onMouseDown={ev => startResize('budget', ev)}
-                     className="absolute right-0 top-0 h-full w-1.5 cursor-col-resize hover:bg-blue-500/40 transition-colors z-10" />
-              </th>
-
-              {/* Coste estimado */}
-              <th style={{ width: colWidths.estCost, minWidth: colWidths.estCost, position: 'relative' }}
-                  className="border-r border-[#222] select-none">
-                <div className="px-3 py-2.5 text-xs font-semibold text-[#c0c0c0] uppercase tracking-wide text-right">
-                  Coste estimado
-                </div>
-                <div onMouseDown={ev => startResize('estCost', ev)}
-                     className="absolute right-0 top-0 h-full w-1.5 cursor-col-resize hover:bg-blue-500/40 transition-colors z-10" />
-              </th>
-
-              {/* % Gasto/Estimado */}
-              <th style={{ width: colWidths.spendPct, minWidth: colWidths.spendPct, position: 'relative' }}
-                  className="border-r border-[#222] select-none">
-                <div className="px-3 py-2.5 text-xs font-semibold text-[#c0c0c0] uppercase tracking-wide text-right">
-                  % Gasto/Est.
-                </div>
-                <div onMouseDown={ev => startResize('spendPct', ev)}
-                     className="absolute right-0 top-0 h-full w-1.5 cursor-col-resize hover:bg-blue-500/40 transition-colors z-10" />
-              </th>
+              <Th label="Presup. diario" k="dailyBudgetEur" col="budget"   right />
+              <Th label="Coste estimado" k="estCost"        col="estCost"  right />
+              <Th label="% Gasto/Est."   k="spendPct"       col="spendPct" right />
 
               {/* Estado */}
               <th
