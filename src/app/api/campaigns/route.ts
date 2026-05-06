@@ -85,6 +85,9 @@ export async function GET(request: Request) {
     return NextResponse.json({ metrics, numDays })
   } catch (e: any) {
     console.error('[api/campaigns]', e)
+    if (e.name === 'SCOPE_INSUFFICIENT') {
+      return NextResponse.json({ error: e.message, reauth: true }, { status: 403 })
+    }
     return NextResponse.json({ error: e.message }, { status: 500 })
   }
 }

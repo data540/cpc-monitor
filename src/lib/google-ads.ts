@@ -167,6 +167,11 @@ async function fetchCampaignRows(
 
   if (!res.ok) {
     const err = await res.text()
+    if (res.status === 403 && err.includes('ACCESS_TOKEN_SCOPE_INSUFFICIENT')) {
+      const scopeError = new Error('El token de acceso no tiene permiso para Google Ads. Vuelve a conectar tu cuenta.')
+      scopeError.name = 'SCOPE_INSUFFICIENT'
+      throw scopeError
+    }
     throw new Error(`Google Ads API error ${res.status}: ${err}`)
   }
 
