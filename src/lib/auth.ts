@@ -41,6 +41,7 @@ export const authOptions: NextAuthOptions = {
             update: {
               access_token: account.access_token,
               expires_at:   account.expires_at ?? null,
+              scope:        account.scope ?? undefined,
               ...(account.refresh_token ? { refresh_token: account.refresh_token } : {}),
             },
             create: {
