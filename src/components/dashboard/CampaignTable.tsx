@@ -17,7 +17,18 @@ type SortKey = keyof Pick<
   'campaignName' | 'cpcCeiling' | 'avgCpc' | 'cpcUsagePct' | 'clicks' |
   'impressions' | 'ctr' | 'costEur' | 'isActual' | 'topImpressionPct' |
   'absoluteTopImpressionPct' | 'targetRoas' | 'realRoas' | 'dailyBudgetEur'
-> | 'estCost' | 'spendPct'
+> | 'estCost' | 'spendPct' | 'level'
+
+type Level      = CampaignMetrics['recommendation']['level']
+type FilterOp   = '>' | '<' | '='
+type FilterCol  = Exclude<SortKey, 'campaignName' | 'level'>
+
+interface NumericFilter {
+  id:     number
+  column: FilterCol
+  op:     FilterOp
+  value:  number
+}
 
 // ── Anchos por defecto de columnas (px) ──────────────────────
 
@@ -49,6 +60,36 @@ const LEVEL_COLOR: Record<string, string> = {
   alert:   'text-red-DEFAULT',
 }
 
+// Rango de severidad para ordenar Estado de mayor (alert) a menor (ok)
+const SEVERITY_RANK: Record<Level, number> = { alert: 3, warning: 2, info: 1, ok: 0 }
+
+const LEVEL_META: { level: Level; label: string; text: string; bg: string; border: string }[] = [
+  { level: 'alert',   label: 'ALERTA', text: 'text-red-DEFAULT',   bg: 'bg-red-dim',   border: 'border-red-DEFAULT/25' },
+  { level: 'warning', label: 'AVISO',  text: 'text-amber-DEFAULT', bg: 'bg-amber-dim', border: 'border-amber-DEFAULT/25' },
+  { level: 'info',    label: 'INFO',   text: 'text-blue-DEFAULT',  bg: 'bg-blue-dim',  border: 'border-blue-DEFAULT/25' },
+  { level: 'ok',      label: 'ACTIVE', text: 'text-green-DEFAULT', bg: 'bg-green-dim', border: 'border-green-DEFAULT/25' },
+]
+
+// Columnas numéricas disponibles para el filtro avanzado (> / < / =)
+const NUMERIC_FILTER_COLUMNS: { key: FilterCol; label: string }[] = [
+  { key: 'cpcCeiling',               label: 'CPC Techo' },
+  { key: 'avgCpc',                   label: 'CPC Actual' },
+  { key: 'cpcUsagePct',              label: 'Uso %' },
+  { key: 'clicks',                   label: 'Clics' },
+  { key: 'impressions',              label: 'Impresiones' },
+  { key: 'ctr',                      label: 'CTR' },
+  { key: 'costEur',                  label: 'Coste' },
+  { key: 'isActual',                 label: 'IS' },
+  { key: 'topImpressionPct',         label: 'Top IS' },
+  { key: 'absoluteTopImpressionPct', label: 'Abs Top IS' },
+  { key: 'targetRoas',               label: 'ROAS Obj' },
+  { key: 'realRoas',                 label: 'ROAS Real' },
+  { key: 'dailyBudgetEur',           label: 'Presup. diario' },
+  { key: 'estCost',                  label: 'Coste estimado' },
+  { key: 'spendPct',                 label: '% Gasto/Est.' },
+]
+const COLUMN_LABEL: Record<string, string> = Object.fromEntries(NUMERIC_FILTER_COLUMNS.map(c => [c.key, c.label]))
+
 function pct(v: number | null)             { return v !== null ? `${Math.round(v * 100)}%` : '—' }
 function eur(v: number | null)             { return v !== null ? `${v.toFixed(2)} €` : '—' }
 function num(v: number | null, d = 2)      { return v !== null ? v.toFixed(d) : '—' }
@@ -62,6 +103,14 @@ export function CampaignTable({ metrics, customerId, numDays, onRefresh, onSelec
   const [sortAsc,     setSortAsc]     = useState(true)
   const [colWidths,   setColWidths]   = useState(DEFAULT_WIDTHS)
   const [search,      setSearch]      = useState('')
+  const [levelFilter, setLevelFilter] = useState<Set<Level>>(new Set())
+  const [numericFilters, setNumericFilters] = useState<NumericFilter[]>([])
+  const [filterPanelOpen, setFilterPanelOpen] = useState(false)
+  const [draftColumn, setDraftColumn] = useState<FilterCol>('costEur')
+  const [draftOp,     setDraftOp]     = useState<FilterOp>('>')
+  const [draftValue,  setDraftValue]  = useState('')
+  const filterIdRef  = useRef(0)
+  const filterPanelRef = useRef<HTMLDivElement>(null)
 
   // ── Scrollbar lateral (proxy nativo) ─────────────────────────
   const tableScrollRef = useRef<HTMLDivElement>(null)
@@ -97,6 +146,7 @@ export function CampaignTable({ metrics, customerId, numDays, onRefresh, onSelec
 
   // ── Ordenación ──────────────────────────────────────────────
   const getSortValue = (m: CampaignMetrics, key: SortKey): number | string => {
+    if (key === 'level') return SEVERITY_RANK[m.recommendation.level]
     if (key === 'estCost') return m.dailyBudgetEur !== null ? m.dailyBudgetEur * numDays : -Infinity
     if (key === 'spendPct') {
       const est = m.dailyBudgetEur !== null ? m.dailyBudgetEur * numDays : null
@@ -119,6 +169,34 @@ export function CampaignTable({ metrics, customerId, numDays, onRefresh, onSelec
     if (key === sortKey) setSortAsc(a => !a)
     else { setSortKey(key); setSortAsc(true) }
   }
+
+  // ── Filtro por tipo de Estado ─────────────────────────────────
+  const toggleLevelFilter = (level: Level) => setLevelFilter(prev => {
+    const next = new Set(prev)
+    next.has(level) ? next.delete(level) : next.add(level)
+    return next
+  })
+
+  // ── Filtro numérico avanzado (> / < / =) ──────────────────────
+  const addNumericFilter = () => {
+    const value = parseFloat(draftValue.replace(',', '.'))
+    if (isNaN(value)) return
+    filterIdRef.current += 1
+    setNumericFilters(prev => [...prev, { id: filterIdRef.current, column: draftColumn, op: draftOp, value }])
+    setDraftValue('')
+  }
+  const removeNumericFilter = (id: number) => setNumericFilters(prev => prev.filter(f => f.id !== id))
+
+  useEffect(() => {
+    if (!filterPanelOpen) return
+    const onClickOutside = (e: MouseEvent) => {
+      if (filterPanelRef.current && !filterPanelRef.current.contains(e.target as Node)) {
+        setFilterPanelOpen(false)
+      }
+    }
+    document.addEventListener('mousedown', onClickOutside)
+    return () => document.removeEventListener('mousedown', onClickOutside)
+  }, [filterPanelOpen])
 
   // ── Selección (checkbox) ─────────────────────────────────────
   const allIds      = metrics.map(m => m.campaignId)
@@ -208,10 +286,24 @@ export function CampaignTable({ metrics, customerId, numDays, onRefresh, onSelec
     </th>
   )
 
-  // ── Filtro de búsqueda ───────────────────────────────────────
-  const filtered = search.trim()
-    ? sorted.filter(m => m.campaignName.toLowerCase().includes(search.toLowerCase().trim()))
-    : sorted
+  // ── Filtros combinados (nombre + estado + numéricos) ──────────
+  const hasActiveFilters = search.trim() !== '' || levelFilter.size > 0 || numericFilters.length > 0
+
+  const filtered = useMemo(() => {
+    const q = search.trim().toLowerCase()
+    return sorted.filter(m => {
+      if (q && !m.campaignName.toLowerCase().includes(q)) return false
+      if (levelFilter.size > 0 && !levelFilter.has(m.recommendation.level)) return false
+      for (const f of numericFilters) {
+        const v = getSortValue(m, f.column)
+        if (typeof v !== 'number' || v === -Infinity) return false
+        if (f.op === '>' && !(v > f.value)) return false
+        if (f.op === '<' && !(v < f.value)) return false
+        if (f.op === '=' && v !== f.value) return false
+      }
+      return true
+    })
+  }, [sorted, search, levelFilter, numericFilters])
 
   const totalWidth = Object.values(colWidths).reduce((a, b) => a + b, 0)
 
@@ -278,27 +370,122 @@ export function CampaignTable({ metrics, customerId, numDays, onRefresh, onSelec
         )}
       </div>
 
-      {/* ── Buscador ─────────────────────────────────────────── */}
-      <div className="flex items-center gap-3">
-        <div className="relative flex-1 max-w-xs">
-          <span className="absolute left-3 top-1/2 -translate-y-1/2 text-[#555] text-sm pointer-events-none">⌕</span>
-          <input
-            type="text"
-            value={search}
-            onChange={e => setSearch(e.target.value)}
-            placeholder="Buscar campaña..."
-            className="w-full pl-8 pr-3 py-2 text-xs num bg-bg-card border border-bg-border focus:border-cyan-DEFAULT/40 rounded text-white placeholder-text-tertiary outline-none transition-colors"
-          />
-          {search && (
+      {/* ── Buscador y filtros ───────────────────────────────── */}
+      <div className="flex flex-col gap-2">
+        <div className="flex flex-wrap items-center gap-3">
+          <div className="relative flex-1 max-w-xs">
+            <span className="absolute left-3 top-1/2 -translate-y-1/2 text-[#555] text-sm pointer-events-none">⌕</span>
+            <input
+              type="text"
+              value={search}
+              onChange={e => setSearch(e.target.value)}
+              placeholder="Buscar campaña..."
+              className="w-full pl-8 pr-3 py-2 text-xs num bg-bg-card border border-bg-border focus:border-cyan-DEFAULT/40 rounded text-white placeholder-text-tertiary outline-none transition-colors"
+            />
+            {search && (
+              <button
+                onClick={() => setSearch('')}
+                className="absolute right-2.5 top-1/2 -translate-y-1/2 text-[#555] hover:text-white transition-colors text-xs"
+              >✕</button>
+            )}
+          </div>
+
+          {/* Chips de tipo de Estado */}
+          <div className="flex items-center gap-1.5">
+            {LEVEL_META.map(lm => {
+              const active = levelFilter.has(lm.level)
+              return (
+                <button
+                  key={lm.level}
+                  onClick={() => toggleLevelFilter(lm.level)}
+                  className={clsx(
+                    'num text-[9px] px-2 py-1.5 rounded-sm border tracking-wider uppercase transition-colors',
+                    active ? clsx(lm.bg, lm.text, lm.border) : 'border-bg-border text-text-tertiary hover:text-text-secondary'
+                  )}
+                >
+                  {lm.label}
+                </button>
+              )
+            })}
+          </div>
+
+          {/* Filtro numérico avanzado */}
+          <div className="relative" ref={filterPanelRef}>
             <button
-              onClick={() => setSearch('')}
-              className="absolute right-2.5 top-1/2 -translate-y-1/2 text-[#555] hover:text-white transition-colors text-xs"
-            >✕</button>
-          )}
+              onClick={() => setFilterPanelOpen(o => !o)}
+              className={clsx(
+                'num text-[10px] px-3 py-1.5 rounded-sm border tracking-widest uppercase transition-colors',
+                numericFilters.length > 0
+                  ? 'bg-cyan-DEFAULT/10 border-cyan-DEFAULT/30 text-cyan-DEFAULT'
+                  : 'border-bg-border text-text-tertiary hover:text-text-secondary'
+              )}
+            >
+              Filtros{numericFilters.length > 0 ? ` (${numericFilters.length})` : ''}
+            </button>
+
+            {filterPanelOpen && (
+              <div className="absolute left-0 top-full mt-1 z-30 w-72 bg-bg-card border border-bg-border rounded shadow-lg p-3 flex flex-col gap-2">
+                <div className="flex items-center gap-2">
+                  <select
+                    value={draftColumn}
+                    onChange={e => setDraftColumn(e.target.value as FilterCol)}
+                    className="num text-xs bg-bg-surface border border-bg-border rounded px-2 py-1.5 text-text-primary outline-none flex-1"
+                  >
+                    {NUMERIC_FILTER_COLUMNS.map(c => (
+                      <option key={c.key} value={c.key}>{c.label}</option>
+                    ))}
+                  </select>
+                  <select
+                    value={draftOp}
+                    onChange={e => setDraftOp(e.target.value as FilterOp)}
+                    className="num text-xs bg-bg-surface border border-bg-border rounded px-2 py-1.5 text-text-primary outline-none"
+                  >
+                    <option value=">">&gt;</option>
+                    <option value="<">&lt;</option>
+                    <option value="=">=</option>
+                  </select>
+                </div>
+                <div className="flex items-center gap-2">
+                  <input
+                    type="text"
+                    inputMode="decimal"
+                    value={draftValue}
+                    onChange={e => setDraftValue(e.target.value)}
+                    placeholder="Valor"
+                    className="num text-xs flex-1 bg-bg-surface border border-bg-border focus:border-cyan-DEFAULT/60 rounded px-2 py-1.5 text-text-primary placeholder-text-tertiary outline-none"
+                  />
+                  <button
+                    onClick={addNumericFilter}
+                    disabled={!draftValue.trim()}
+                    className="num text-xs px-3 py-1.5 rounded disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+                    style={{ background: 'rgba(0,212,255,0.15)', border: '1px solid rgba(0,212,255,0.3)', color: '#00D4FF' }}
+                  >
+                    Añadir
+                  </button>
+                </div>
+              </div>
+            )}
+          </div>
+
+          <span className="num text-[10px] text-text-tertiary tracking-wider ml-auto">
+            {hasActiveFilters ? `${filtered.length} / ${sorted.length}` : `${sorted.length} CAMPAIGNS`}
+          </span>
         </div>
-        <span className="num text-[10px] text-text-tertiary tracking-wider">
-          {search ? `${filtered.length} / ${sorted.length}` : `${sorted.length} CAMPAIGNS`}
-        </span>
+
+        {/* Chips de filtros numéricos activos */}
+        {numericFilters.length > 0 && (
+          <div className="flex flex-wrap items-center gap-1.5">
+            {numericFilters.map(f => (
+              <span
+                key={f.id}
+                className="num text-[10px] px-2 py-1 rounded-sm border border-bg-border text-text-secondary flex items-center gap-1.5"
+              >
+                {COLUMN_LABEL[f.column]} {f.op} {f.value}
+                <button onClick={() => removeNumericFilter(f.id)} className="text-text-tertiary hover:text-white transition-colors">✕</button>
+              </span>
+            ))}
+          </div>
+        )}
       </div>
 
       {/* ── Tabla ────────────────────────────────────────────── */}
@@ -364,7 +551,13 @@ export function CampaignTable({ metrics, customerId, numDays, onRefresh, onSelec
                 style={{ width: colWidths.status, minWidth: colWidths.status, position: 'relative' }}
                 className="border-l border-[#222] select-none"
               >
-                <div className="px-3 py-2.5 text-xs font-semibold text-[#c0c0c0] uppercase tracking-wide">Estado</div>
+                <div
+                  onClick={() => toggleSort('level')}
+                  className="px-3 py-2.5 text-xs font-semibold text-[#c0c0c0] uppercase tracking-wide cursor-pointer hover:text-white hover:bg-[#1a1a1a] transition-colors flex items-center gap-1"
+                >
+                  Estado
+                  {sortKey === 'level' && <span className="opacity-50 text-[10px]">{sortAsc ? '↑' : '↓'}</span>}
+                </div>
                 <div onMouseDown={ev => startResize('status', ev)} className="absolute right-0 top-0 h-full w-1.5 cursor-col-resize hover:bg-blue-500/40 transition-colors z-10" />
               </th>
             </tr>
@@ -374,7 +567,9 @@ export function CampaignTable({ metrics, customerId, numDays, onRefresh, onSelec
             {filtered.length === 0 && (
               <tr>
                 <td colSpan={18} className="px-6 py-10 text-center text-[#555] text-sm">
-                  No hay campañas que coincidan con «{search}»
+                  {search.trim()
+                    ? `No hay campañas que coincidan con «${search}»`
+                    : 'No hay campañas que coincidan con los filtros aplicados'}
                 </td>
               </tr>
             )}
