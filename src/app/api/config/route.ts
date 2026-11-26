@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server'
 import { getServerSession } from 'next-auth'
 import { authOptions } from '@/lib/auth'
 import { prisma } from '@/lib/prisma'
+import { cpcConfigSchema, campaignNameSchema } from '@/lib/validators'
 
 export async function GET() {
   const session = await getServerSession(authOptions)
@@ -17,12 +18,18 @@ export async function POST(request: Request) {
   if (!session?.user) return NextResponse.json({ error: 'No autenticado' }, { status: 401 })
 
   const userId = (session.user as any).id
-  const body   = await request.json()
-  const { campaignName, cpcCeiling } = body
+  const body = await request.json()
 
-  if (!campaignName || typeof cpcCeiling !== 'number') {
-    return NextResponse.json({ error: 'campaignName y cpcCeiling son requeridos' }, { status: 400 })
+  // Validar input
+  const result = cpcConfigSchema.safeParse(body)
+  if (!result.success) {
+    return NextResponse.json(
+      { error: 'Datos inválidos', details: result.error.flatten() },
+      { status: 400 }
+    )
   }
+
+  const { campaignName, cpcCeiling } = result.data
 
   const config = await prisma.cpcConfig.upsert({
     where:  { userId_campaignName: { userId, campaignName } },
@@ -39,8 +46,17 @@ export async function DELETE(request: Request) {
 
   const userId = (session.user as any).id
   const { searchParams } = new URL(request.url)
-  const campaignName = searchParams.get('campaignName') ?? ''
+  const campaignNameRaw = searchParams.get('campaignName')
 
-  await prisma.cpcConfig.deleteMany({ where: { userId, campaignName } })
+  // Validar nombre de campaña
+  const result = campaignNameSchema.safeParse(campaignNameRaw)
+  if (!result.success) {
+    return NextResponse.json(
+      { error: 'Nombre de campaña inválido' },
+      { status: 400 }
+    )
+  }
+
+  await prisma.cpcConfig.deleteMany({ where: { userId, campaignName: result.data } })
   return NextResponse.json({ ok: true })
 }
