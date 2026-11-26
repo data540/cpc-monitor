@@ -65,7 +65,7 @@ const statusClass = (s: string | null) =>
     : s === 'ADDED' || s === 'ADDED_EXCLUDED' ? 'text-text-primary' : 'text-amber-DEFAULT'
 
 // ── Exportación de Desperdicio (CSV para Excel en español y TXT) ──
-type ExportRow = WasteRow & { cpa: number | null; flagged: boolean }
+type ExportRow = WasteRow & { cpc: number | null; cpa: number | null; flagged: boolean }
 
 function downloadFile(filename: string, content: string, mime: string) {
   // BOM para que Excel abra bien los acentos
@@ -86,10 +86,10 @@ const csvNum = (n: number | null, digits = 2) => (n === null || !isFinite(n) ? '
 
 function wasteToCsv(rows: ExportRow[], kind: 'term' | 'keyword', currency: string): string {
   const header = [kind === 'term' ? 'Término de búsqueda' : 'Palabra clave', 'Concordancia', 'Estado', 'Campaña', 'Grupo de anuncios',
-    `Coste (${currency})`, 'Clics', 'Impresiones', 'Conversiones', `CPA (${currency})`, 'Gasto ≥ 2× ref. sin conversiones']
+    `Coste (${currency})`, 'Clics', `CPC medio (${currency})`, 'Impresiones', 'Conversiones', `CPA (${currency})`, 'Gasto ≥ 2× ref. sin conversiones']
   const lines = rows.map(r => [
     r.text, r.matchType ?? '', statusLabel(kind, r.status), r.campaign, r.adGroup ?? '',
-    csvNum(r.cost), String(r.clicks), String(r.impressions), csvNum(r.conversions), csvNum(r.cpa), r.flagged ? 'Sí' : 'No',
+    csvNum(r.cost), String(r.clicks), csvNum(r.cpc), String(r.impressions), csvNum(r.conversions), csvNum(r.cpa), r.flagged ? 'Sí' : 'No',
   ].map(csvCell).join(';'))
   return [header.map(csvCell).join(';'), ...lines].join('\r\n')
 }
@@ -355,7 +355,7 @@ export function CpaAnalysisClient() {
   const wasteRows = useMemo(() => {
     const q = wasteQuery.trim().toLowerCase()
     return wasteAll
-      .map(r => ({ ...r, cpa: r.conversions > 0 ? r.cost / r.conversions : null, flagged: r.conversions === 0 && wasteRef > 0 && r.cost >= 2 * wasteRef }))
+      .map(r => ({ ...r, cpc: r.clicks > 0 ? r.cost / r.clicks : null, cpa: r.conversions > 0 ? r.cost / r.conversions : null, flagged: r.conversions === 0 && wasteRef > 0 && r.cost >= 2 * wasteRef }))
       .filter(r => (!q || r.text.toLowerCase().includes(q))
         && (!wasteStatus.length || (r.status !== null && wasteStatus.includes(r.status)))
         && (!wasteOnlyNoConv || r.conversions === 0))
@@ -791,11 +791,12 @@ export function CpaAnalysisClient() {
                           <SortTh s={wasteSort} k="campaign" label="Campaña / grupo" align="left" />
                           <SortTh s={wasteSort} k="cost" label="Coste" />
                           <SortTh s={wasteSort} k="clicks" label="Clics" />
+                          <SortTh s={wasteSort} k="cpc" label="CPC medio" />
                           <SortTh s={wasteSort} k="conversions" label="Conv." />
                           <SortTh s={wasteSort} k="cpa" label="CPA" />
                         </tr></thead>
                         <tbody>
-                          {wasteRows.length === 0 && <tr><td colSpan={7} className="py-6 text-center text-text-soft">Nada coincide con los filtros</td></tr>}
+                          {wasteRows.length === 0 && <tr><td colSpan={8} className="py-6 text-center text-text-soft">Nada coincide con los filtros</td></tr>}
                           {wasteSort.sorted.slice(0, 300).map((r, i) => (
                             <tr key={i} className={`border-b border-bg-border/50 ${r.flagged ? 'bg-red-DEFAULT/5' : ''}`}>
                               <td className="py-1.5 px-2 text-text-primary">{r.text}{r.matchType && <span className="text-[10px] text-text-soft ml-1">{r.matchType.toLowerCase()}</span>}</td>
@@ -803,6 +804,7 @@ export function CpaAnalysisClient() {
                               <td className="py-1.5 px-2 text-text-soft max-w-[240px] truncate" title={`${r.campaign} / ${r.adGroup ?? ''}`}>{r.campaign}{r.adGroup ? ` / ${r.adGroup}` : ''}</td>
                               <td className={`py-1.5 px-2 text-right ${r.flagged ? 'text-red-DEFAULT font-bold' : ''}`}>{fmtMoney(r.cost, focus.currency)}</td>
                               <td className="py-1.5 px-2 text-right">{fmtNum(r.clicks)}</td>
+                              <td className="py-1.5 px-2 text-right">{fmtMoney(r.cpc, focus.currency)}</td>
                               <td className="py-1.5 px-2 text-right">{fmtNum(r.conversions, 1)}</td>
                               <td className={`py-1.5 px-2 text-right ${r.cpa && ref && r.cpa > ref * 1.5 ? 'text-amber-DEFAULT' : ''}`}>{fmtMoney(r.cpa, focus.currency)}</td>
                             </tr>
