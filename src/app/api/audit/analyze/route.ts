@@ -41,13 +41,13 @@ export async function POST(request: Request) {
   }
 
   try {
-    const { analysis, model } = await analyzeAccount(
+    const { analysis, model, usage } = await analyzeAccount(
       parsed.data.data as unknown as AccountAuditData,
       parsed.data.kpis as unknown as AccountKpis,
       parsed.data.findings as unknown as Finding[],
       parsed.data.model,
     )
-    return NextResponse.json({ analysis, model })
+    return NextResponse.json({ analysis, model, usage })
   } catch (e) {
     console.error('[api/audit/analyze]', e)
     return NextResponse.json({ error: describeOpenAIError(e) }, { status: 502 })

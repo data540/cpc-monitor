@@ -5,6 +5,7 @@ import { useAccountContext } from '@/contexts/AccountContext'
 import { AppSidebar } from '@/components/layout/AppSidebar'
 import { renderAuditHtml } from '@/lib/audit/report'
 import { ModelPicker, useModelChoice } from './ModelPicker'
+import { type AiUsage, addUsage, formatUsage } from '@/lib/ai/usage'
 import type {
   AccountAnalysis, AccountAuditData, AccountAuditResult, AccountKpis, AuditReport, Finding, GlobalAnalysis,
 } from '@/lib/audit/types'
@@ -106,6 +107,7 @@ export function AuditClient() {
     let period: AuditReport['period'] | null = null
     let model: string | null = null
     const chosenModel = ai.model   // fijo durante toda la auditoría
+    let usage: AiUsage | null = null
 
     await runPool(targetIds, CONCURRENCY, async id => {
       const acc = accounts.find(a => a.id === id)!
@@ -125,8 +127,9 @@ export function AuditClient() {
       }
       try {
         set(id, { step: 'analyzing' })
-        const r = await postJson<{ analysis: AccountAnalysis; model: string }>('/api/audit/analyze', { ...collected, model: chosenModel })
+        const r = await postJson<{ analysis: AccountAnalysis; model: string; usage?: AiUsage }>('/api/audit/analyze', { ...collected, model: chosenModel })
         model = r.model
+        usage = addUsage(usage, r.usage)
         results.set(id, { ...base, analysis: r.analysis })
         set(id, { step: 'done' })
       } catch (e: any) {
@@ -148,18 +151,19 @@ export function AuditClient() {
     if (analysed.length >= 2) {
       setGlobalStep('analyzing')
       try {
-        const r = await postJson<{ global: GlobalAnalysis }>('/api/audit/global', {
+        const r = await postJson<{ global: GlobalAnalysis; usage?: AiUsage }>('/api/audit/global', {
           accounts: analysed.map(a => ({ name: a.name, kpis: a.kpis, analysis: a.analysis })),
           model: chosenModel,
         })
         global = r.global
+        usage = addUsage(usage, r.usage)
         setGlobalStep('done')
       } catch {
         setGlobalStep('error')
       }
     }
 
-    setReport({ generatedAt: new Date().toISOString(), period, model, accounts: ordered, global })
+    setReport({ generatedAt: new Date().toISOString(), period, model, accounts: ordered, global, usage })
     setRunning(false)
   }
 
@@ -332,6 +336,10 @@ export function AuditClient() {
               </div>
             </div>
             <iframe title="Informe de auditoría" srcDoc={html} sandbox="allow-same-origin" className="w-full bg-white" style={{ height: '80vh' }} />
+            <p className="num text-[11px] text-text-soft px-5 py-3 border-t border-bg-border">
+              Coste estimado del análisis con IA: <span className="text-text-primary">{formatUsage(report.usage)}</span>
+              {report.model && <> · modelo {report.model}</>}
+            </p>
           </div>
         )}
       </main>

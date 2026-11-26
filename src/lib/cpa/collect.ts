@@ -46,9 +46,29 @@ const between = (r: DateRange) => `segments.date BETWEEN '${r.start}' AND '${r.e
 const campaignFilter = (ids?: string[]) =>
   ids && ids.length ? ` AND campaign.id IN (${ids.filter(i => /^\d+$/.test(i)).join(',')})` : ''
 
+// Error de Google Ads resumido: "CODIGO: mensaje" (o el texto recortado si no es JSON)
+function describeAdsError(body: string): string {
+  try {
+    const j = JSON.parse(body)
+    const errs = j?.error?.details?.flatMap((d: any) => d?.errors ?? []) ?? []
+    if (errs.length) {
+      return errs.slice(0, 3).map((e: any) => {
+        const code = Object.entries(e.errorCode ?? {}).map(([k, v]) => `${k}.${v}`).join(',')
+        const field = e.location?.fieldPathElements?.map((p: any) => p.fieldName).join('.')
+        return `${code}${field ? ` [${field}]` : ''}: ${e.message ?? ''}`
+      }).join(' | ')
+    }
+    return j?.error?.message ?? body.slice(0, 300)
+  } catch {
+    return body.slice(0, 300)
+  }
+}
+
+// Ejecuta una consulta GAQL (con paginación). Si falla y hay `fallback`, reintenta con esa
+// consulta alternativa; solo se marca como no disponible si fallan las dos.
 function makeGaql(ctx: CollectCtx, unavailable: string[]) {
-  return async function gaql(label: string, query: string): Promise<any[]> {
-    const out: any[] = []
+  async function run(label: string, query: string): Promise<{ ok: boolean; rows: any[] }> {
+    const rows: any[] = []
     let pageToken: string | undefined
     try {
       for (let page = 0; page < MAX_PAGES; page++) {
@@ -65,21 +85,30 @@ function makeGaql(ctx: CollectCtx, unavailable: string[]) {
         })
         if (!res.ok) {
           const body = await res.text().catch(() => '')
-          console.warn(`[cpa/collect] ${label} ${res.status}: ${body.slice(0, 300)}`)
-          unavailable.push(label)
-          return out
+          console.warn(`[cpa/collect] ${label} ${res.status}: ${describeAdsError(body)}`)
+          return { ok: false, rows }
         }
         const data = await res.json()
-        out.push(...(data.results ?? []))
+        rows.push(...(data.results ?? []))
         pageToken = data.nextPageToken
         if (!pageToken) break
       }
-      return out
+      return { ok: true, rows }
     } catch (e) {
       console.warn(`[cpa/collect] ${label}`, e)
-      unavailable.push(label)
-      return out
+      return { ok: false, rows }
     }
+  }
+
+  return async function gaql(label: string, query: string, fallback?: string): Promise<any[]> {
+    const first = await run(label, query)
+    if (first.ok) return first.rows
+    if (fallback) {
+      const second = await run(`${label} (alternativa)`, fallback)
+      if (second.ok) return second.rows
+    }
+    unavailable.push(label)
+    return first.rows
   }
 }
 
@@ -147,7 +176,15 @@ export async function collectOverview(ctx: CollectCtx, days: number): Promise<Cp
       FROM change_event
       WHERE change_event.change_date_time >= '${fmt(chStart)}'
         AND change_event.change_date_time <= '${fmt(chEnd)}'
-        AND change_event.change_resource_type IN ('CAMPAIGN', 'CAMPAIGN_BUDGET', 'BIDDING_STRATEGY')
+        AND change_event.change_resource_type IN ('CAMPAIGN', 'CAMPAIGN_BUDGET')
+      ORDER BY change_event.change_date_time DESC
+      LIMIT 300`, `
+      SELECT change_event.change_date_time, change_event.change_resource_type,
+        change_event.change_resource_name, change_event.changed_fields, change_event.campaign
+      FROM change_event
+      WHERE change_event.change_date_time >= '${fmt(chStart)}'
+        AND change_event.change_date_time <= '${fmt(new Date())}'
+        AND change_event.change_resource_type IN ('CAMPAIGN', 'CAMPAIGN_BUDGET')
       ORDER BY change_event.change_date_time DESC
       LIMIT 300`),
     gaql('Acciones de conversión', `
@@ -321,7 +358,9 @@ export async function collectSegments(ctx: CollectCtx, days: number, campaignIds
     gaql('Dispositivos', `SELECT segments.device, ${METRIC_FIELDS} FROM campaign WHERE ${where}`),
     gaql('Redes', `SELECT segments.ad_network_type, ${METRIC_FIELDS} FROM campaign WHERE ${where}`),
     gaql('Hora y día', `SELECT segments.day_of_week, segments.hour, ${METRIC_FIELDS} FROM campaign WHERE ${where}`),
-    gaql('Ubicaciones', `SELECT segments.geo_target_region, ${METRIC_FIELDS} FROM geographic_view WHERE ${where}`),
+    gaql('Ubicaciones', `SELECT segments.geo_target_region, ${METRIC_FIELDS} FROM geographic_view WHERE ${where}`,
+      `SELECT segments.geo_target_region, metrics.cost_micros, metrics.clicks, metrics.impressions,
+        metrics.conversions, metrics.conversions_value FROM geographic_view WHERE ${where}`),
     gaql('Edad', `SELECT ad_group_criterion.age_range.type, ${METRIC_FIELDS} FROM age_range_view WHERE ${where}`),
     gaql('Sexo', `SELECT ad_group_criterion.gender.type, ${METRIC_FIELDS} FROM gender_view WHERE ${where}`),
     gaql('Audiencias', `SELECT ad_group_criterion.display_name, ${METRIC_FIELDS} FROM ad_group_audience_view WHERE ${where}`),
@@ -376,6 +415,16 @@ export async function collectSegments(ctx: CollectCtx, days: number, campaignIds
   }
 }
 
+// Estado efectivo de la palabra clave: la propia, o la del grupo/campaña si están pausados
+function keywordStatus(r: any): string | null {
+  const k = r.adGroupCriterion?.status, g = r.adGroup?.status, c = r.campaign?.status
+  if (k === 'REMOVED' || g === 'REMOVED' || c === 'REMOVED') return 'REMOVED'
+  if (k === 'PAUSED') return 'PAUSED'
+  if (g === 'PAUSED') return 'AD_GROUP_PAUSED'
+  if (c === 'PAUSED') return 'CAMPAIGN_PAUSED'
+  return k ?? null
+}
+
 // ── Desperdicio: palabras clave y términos de búsqueda ─────────
 export async function collectWaste(ctx: CollectCtx, days: number, campaignIds?: string[]): Promise<CpaWaste> {
   const unavailable: string[] = []
@@ -385,15 +434,15 @@ export async function collectWaste(ctx: CollectCtx, days: number, campaignIds?: 
 
   const [kwRows, termRows] = await Promise.all([
     gaql('Palabras clave', `
-      SELECT campaign.name, ad_group.name, ad_group_criterion.keyword.text,
-        ad_group_criterion.keyword.match_type,
+      SELECT campaign.name, campaign.status, ad_group.name, ad_group.status,
+        ad_group_criterion.keyword.text, ad_group_criterion.keyword.match_type, ad_group_criterion.status,
         metrics.cost_micros, metrics.clicks, metrics.impressions, metrics.conversions
       FROM keyword_view
       WHERE ${where} AND metrics.cost_micros > 0
       ORDER BY metrics.cost_micros DESC
       LIMIT 500`),
     gaql('Términos de búsqueda', `
-      SELECT search_term_view.search_term, segments.search_term_match_type, campaign.name, ad_group.name,
+      SELECT search_term_view.search_term, search_term_view.status, segments.search_term_match_type, campaign.name, ad_group.name,
         metrics.cost_micros, metrics.clicks, metrics.impressions, metrics.conversions
       FROM search_term_view
       WHERE ${where} AND metrics.cost_micros > 0
@@ -404,7 +453,7 @@ export async function collectWaste(ctx: CollectCtx, days: number, campaignIds?: 
   const keywords: WasteRow[] = kwRows.map((r: any) => ({
     kind: 'keyword', text: r.adGroupCriterion?.keyword?.text ?? '',
     matchType: r.adGroupCriterion?.keyword?.matchType ?? null,
-    campaign: r.campaign?.name ?? '', adGroup: r.adGroup?.name ?? null,
+    campaign: r.campaign?.name ?? '', adGroup: r.adGroup?.name ?? null, status: keywordStatus(r),
     cost: r2(money(r.metrics?.costMicros)), clicks: num(r.metrics?.clicks),
     impressions: num(r.metrics?.impressions), conversions: r2(num(r.metrics?.conversions)),
   }))
@@ -415,7 +464,7 @@ export async function collectWaste(ctx: CollectCtx, days: number, campaignIds?: 
     const text = r.searchTermView?.searchTerm ?? ''
     const k = `${text}|${r.campaign?.name}|${r.adGroup?.name}`
     const t = termAcc.get(k) ?? { kind: 'term', text, matchType: r.segments?.searchTermMatchType ?? null,
-      campaign: r.campaign?.name ?? '', adGroup: r.adGroup?.name ?? null, cost: 0, clicks: 0, impressions: 0, conversions: 0 }
+      campaign: r.campaign?.name ?? '', adGroup: r.adGroup?.name ?? null, status: r.searchTermView?.status ?? null, cost: 0, clicks: 0, impressions: 0, conversions: 0 }
     t.cost += money(r.metrics?.costMicros); t.clicks += num(r.metrics?.clicks)
     t.impressions += num(r.metrics?.impressions); t.conversions += num(r.metrics?.conversions)
     termAcc.set(k, t)

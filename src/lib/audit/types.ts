@@ -192,4 +192,5 @@ export interface AuditReport {
   model:       string | null
   accounts:    AccountAuditResult[]
   global:      GlobalAnalysis | null
+  usage?:      import('@/lib/ai/usage').AiUsage | null   // consumo total de IA de la auditoría
 }

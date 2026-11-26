@@ -31,8 +31,8 @@ export async function POST(request: Request) {
   if (!parsed.success) return NextResponse.json({ error: 'Datos inválidos' }, { status: 400 })
 
   try {
-    const global = await analyzeGlobal(parsed.data.accounts as any, parsed.data.model)
-    return NextResponse.json({ global })
+    const { global, usage } = await analyzeGlobal(parsed.data.accounts as any, parsed.data.model)
+    return NextResponse.json({ global, usage })
   } catch (e) {
     console.error('[api/audit/global]', e)
     return NextResponse.json({ error: describeOpenAIError(e) }, { status: 502 })

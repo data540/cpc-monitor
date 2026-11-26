@@ -1,6 +1,7 @@
 // ── Informe HTML de CPA Analysis (autocontenido, diseño neutro) ──
 import type { CpaReport, Verdict } from './types'
 import { fmtDelta, fmtMoney, fmtNum, fmtPct, strategyLabel, systemStatusLabel } from './metrics'
+import { formatUsage } from '@/lib/ai/usage'
 
 const esc = (s: unknown) => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]!))
 
@@ -137,6 +138,6 @@ export function renderCpaReportHtml(r: CpaReport): string {
     <table><thead><tr><th>Campaña</th><th class="n">Coste</th><th class="n">Conv.</th><th class="n">CPA</th><th class="n">Referencia</th><th class="n">Desviación</th><th class="n">CPA 7 d</th><th>Veredicto</th></tr></thead>
     <tbody>${campaignsRows}</tbody></table></section>
   <section><h2>Alertas automáticas</h2>${alertsHtml}</section>
-  <footer>Informe generado automáticamente${r.model ? ` · análisis con ${esc(r.model)}` : ''}. Revisa las recomendaciones antes de aplicarlas.</footer>
+  <footer>Informe generado automáticamente${r.model ? ` · análisis con ${esc(r.model)}` : ''}. Revisa las recomendaciones antes de aplicarlas.${r.usage ? `<br>Coste estimado del análisis con IA: ${esc(formatUsage(r.usage))}` : ''}</footer>
 </div></body></html>`
 }

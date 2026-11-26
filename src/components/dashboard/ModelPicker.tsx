@@ -45,18 +45,18 @@ const price = (o: ModelOption) =>
 
 export function ModelPicker({ choice, disabled }: { choice: ModelChoice; disabled?: boolean }) {
   if (!choice.options.length) {
-    return <p className="num text-[10px] text-text-tertiary">Cargando modelos…</p>
+    return <p className="num text-[11px] text-text-soft">Cargando modelos…</p>
   }
   const groups = (['ChatGPT', 'Claude'] as const).map(p => [p, choice.options.filter(o => o.provider === p)] as const)
   return (
     <div className="space-y-2">
       {groups.map(([provider, opts]) => (
         <div key={provider} className="flex items-center gap-2 flex-wrap">
-          <span className="num text-[9px] text-text-tertiary tracking-widest uppercase w-14">{provider}</span>
+          <span className="num text-[10px] text-text-soft tracking-widest uppercase w-14">{provider}</span>
           {opts.map(o => (
             <button key={o.family} type="button" disabled={disabled} onClick={() => choice.setFamily(o.family)}
               title={`${o.name} · ${o.hint}${o.priceIn !== null ? ' · ' + price(o) : ''}`}
-              className={`num text-[10px] px-3 py-1.5 rounded border tracking-wider transition-colors disabled:opacity-50 ${
+              className={`num text-[11px] px-3 py-1.5 rounded border tracking-wider transition-colors disabled:opacity-50 ${
                 choice.family === o.family
                   ? 'bg-cyan-DEFAULT/10 text-cyan-DEFAULT border-cyan-DEFAULT/40'
                   : 'text-text-secondary border-bg-border hover:text-text-primary'}`}>
@@ -66,7 +66,7 @@ export function ModelPicker({ choice, disabled }: { choice: ModelChoice; disable
         </div>
       ))}
       {choice.current && (
-        <p className="num text-[10px] text-text-tertiary">
+        <p className="num text-[11px] text-text-soft">
           <span className="text-text-secondary">{choice.current.name}</span> · {choice.current.hint}
           {choice.current.priceIn !== null && <> · {price(choice.current)}</>}
           {!choice.current.live && <> · <span className="text-amber-DEFAULT">catálogo de OpenRouter no disponible, versión por defecto</span></>}

@@ -13,6 +13,8 @@ import {
 import { runOverviewRules, runSegmentRules, runWasteRules, sortAlerts } from '@/lib/cpa/rules'
 import { renderCpaReportHtml } from '@/lib/cpa/report'
 import { ModelPicker, useModelChoice } from './ModelPicker'
+import { SortTh, useSort } from './cpa/useSort'
+import { type AiUsage, formatUsage } from '@/lib/ai/usage'
 import {
   type HeatMetric, Empty, Heatmap, ParetoChart, QuadrantChart, SegmentChart, SimulationChart, TrendChart,
 } from './cpa/CpaCharts'
@@ -25,8 +27,41 @@ const TABS: { id: Tab; label: string }[] = [
   { id: 'segmentos', label: 'Segmentos' }, { id: 'desperdicio', label: 'Desperdicio' },
   { id: 'simulador', label: 'Simulador' }, { id: 'alertas', label: 'Alertas' }, { id: 'ia', label: 'Análisis IA' },
 ]
-const PERIODS: CpaPeriod[] = [7, 14, 30, 90]
+const PERIODS: CpaPeriod[] = [7, 14, 30, 90, 180, 365]
 const CONCURRENCY = 4
+const EMPTY_CONV: CpaSegments['conversionsByAction'] = []
+const EMPTY_TARGETS: CpaAiAnalysis['targets'] = []
+
+type CampStatusFilter = 'all' | 'enabled' | 'paused' | 'learning' | 'limited' | 'misconfigured' | 'over' | 'noconv'
+const CAMP_STATUS_OPTIONS: { v: CampStatusFilter; l: string }[] = [
+  { v: 'all', l: 'Todos los estados' }, { v: 'enabled', l: 'Activas' }, { v: 'paused', l: 'Pausadas' },
+  { v: 'learning', l: 'En aprendizaje' }, { v: 'limited', l: 'Limitadas' }, { v: 'misconfigured', l: 'Mal configuradas' },
+  { v: 'over', l: 'CPA > referencia +20 %' }, { v: 'noconv', l: 'Gasto sin conversiones' },
+]
+function matchCampStatus(v: CampaignView, f: CampStatusFilter): boolean {
+  const s = v.systemStatus ?? ''
+  switch (f) {
+    case 'enabled': return v.status === 'ENABLED'
+    case 'paused': return v.status === 'PAUSED'
+    case 'learning': return v.status === 'ENABLED' && (s.startsWith('LEARNING') || s === 'MULTIPLE_LEARNING')
+    case 'limited': return v.status === 'ENABLED' && (s.startsWith('LIMITED') || s === 'MULTIPLE_LIMITED')
+    case 'misconfigured': return s.startsWith('MISCONFIGURED') || s === 'MULTIPLE_MISCONFIGURED'
+    case 'over': return v.deviation !== null && v.deviation > 0.2
+    case 'noconv': return v.cost > 0 && v.conversions === 0
+    default: return true
+  }
+}
+
+const KW_STATUS: Record<string, string> = {
+  ENABLED: 'Activa', PAUSED: 'Pausada', AD_GROUP_PAUSED: 'Grupo pausado', CAMPAIGN_PAUSED: 'Campaña pausada', REMOVED: 'Eliminada',
+}
+const TERM_STATUS: Record<string, string> = {
+  ADDED: 'Añadido como palabra clave', EXCLUDED: 'Excluido (negativa)', ADDED_EXCLUDED: 'Añadido y excluido', NONE: 'Sin añadir',
+}
+const statusLabel = (kind: 'term' | 'keyword', s: string | null) => (s ? (kind === 'term' ? TERM_STATUS : KW_STATUS)[s] ?? s : '—')
+const statusClass = (s: string | null) =>
+  s === 'ENABLED' ? 'text-green-DEFAULT' : s === 'EXCLUDED' ? 'text-cyan-DEFAULT' : s === 'REMOVED' ? 'text-red-DEFAULT'
+    : s === 'ADDED' || s === 'ADDED_EXCLUDED' ? 'text-text-primary' : 'text-amber-DEFAULT'
 
 async function getJson<T>(url: string): Promise<T> {
   const res = await fetch(url)
@@ -41,7 +76,7 @@ function Card({ title, children, right, className = '' }: { title?: string; chil
     <section className={`bg-bg-card border border-bg-border rounded-lg p-5 ${className}`}>
       {(title || right) && (
         <div className="flex items-center justify-between mb-4 gap-3">
-          {title && <h2 className="num text-[11px] font-bold text-text-secondary tracking-[0.15em] uppercase">{title}</h2>}
+          {title && <h2 className="num text-[12px] font-bold text-text-secondary tracking-[0.15em] uppercase">{title}</h2>}
           {right}
         </div>
       )}
@@ -54,11 +89,11 @@ function Kpi({ label, value, delta, inverse, hint }: { label: string; value: str
   const good = delta === null || delta === undefined ? null : inverse ? delta < 0 : delta > 0
   return (
     <div className="bg-bg-card border border-bg-border rounded-lg p-4" title={hint}>
-      <p className="num text-[9px] text-text-tertiary tracking-widest uppercase mb-2">{label}</p>
+      <p className="num text-[10px] text-text-soft tracking-widest uppercase mb-2">{label}</p>
       <p className="num text-xl font-bold text-text-primary">{value}</p>
       {delta !== null && delta !== undefined && (
-        <p className={`num text-[10px] mt-1 ${good ? 'text-green-DEFAULT' : 'text-red-DEFAULT'}`}>
-          {delta > 0 ? '▲' : '▼'} {fmtPct(Math.abs(delta), 0)} <span className="text-text-tertiary">vs anterior</span>
+        <p className={`num text-[11px] mt-1 ${good ? 'text-green-DEFAULT' : 'text-red-DEFAULT'}`}>
+          {delta > 0 ? '▲' : '▼'} {fmtPct(Math.abs(delta), 0)} <span className="text-text-soft">vs anterior</span>
         </p>
       )}
     </div>
@@ -67,10 +102,10 @@ function Kpi({ label, value, delta, inverse, hint }: { label: string; value: str
 
 function Seg<T extends string | number>({ value, options, onChange }: { value: T; options: { v: T; l: string }[]; onChange: (v: T) => void }) {
   return (
-    <div className="flex border border-bg-border rounded overflow-hidden">
+    <div className="flex border border-bg-line rounded-md overflow-hidden divide-x divide-bg-line">
       {options.map(o => (
         <button key={String(o.v)} onClick={() => onChange(o.v)}
-          className={`num text-[10px] px-3 py-1.5 tracking-wider transition-colors ${value === o.v ? 'bg-cyan-DEFAULT/15 text-cyan-DEFAULT' : 'text-text-tertiary hover:text-text-primary'}`}>
+          className={`num text-[12px] px-3.5 py-2 tracking-wide transition-colors ${value === o.v ? 'bg-cyan-DEFAULT/20 text-cyan-DEFAULT font-bold' : 'text-text-soft hover:text-text-primary hover:bg-bg-hover'}`}>
           {o.l}
         </button>
       ))}
@@ -79,7 +114,7 @@ function Seg<T extends string | number>({ value, options, onChange }: { value: T
 }
 
 function deviationClass(d: number | null) {
-  if (d === null) return 'text-text-tertiary'
+  if (d === null) return 'text-text-soft'
   if (d > 0.5) return 'text-red-DEFAULT font-bold'
   if (d > 0.2) return 'text-amber-DEFAULT'
   if (d < -0.1) return 'text-green-DEFAULT'
@@ -101,13 +136,13 @@ function AlertList({ alerts, showAccount }: { alerts: CpaAlert[]; showAccount: b
         return (
           <div key={`${a.account}-${a.id}`} className={`border rounded-lg p-3 ${c.cls}`}>
             <div className="flex items-center gap-2 mb-1 flex-wrap">
-              <span className={`num text-[9px] px-2 py-0.5 rounded-sm border tracking-widest ${c.cls} ${c.text}`}>{c.badge}</span>
+              <span className={`num text-[10px] px-2 py-0.5 rounded-sm border tracking-widest ${c.cls} ${c.text}`}>{c.badge}</span>
               <p className="num text-xs font-bold text-text-primary">{a.title}</p>
-              {a.value && <span className={`num text-[10px] ml-auto ${c.text}`}>{a.value}</span>}
+              {a.value && <span className={`num text-[11px] ml-auto ${c.text}`}>{a.value}</span>}
             </div>
-            <p className="num text-[11px] text-text-secondary">{a.description}</p>
+            <p className="num text-[12px] text-text-secondary">{a.description}</p>
             {(a.campaign || (showAccount && a.account)) && (
-              <p className="num text-[10px] text-text-tertiary mt-1">
+              <p className="num text-[11px] text-text-soft mt-1">
                 {showAccount && a.account && <><span className="text-text-secondary">Cuenta:</span> {a.account}{a.campaign ? ' · ' : ''}</>}
                 {a.campaign && <><span className="text-text-secondary">Campaña:</span> {a.campaign}</>}
               </p>
@@ -146,11 +181,13 @@ export function CpaAnalysisClient() {
   const [heatMetric, setHeatMetric] = useState<HeatMetric>('cpa')
   const [simId, setSimId] = useState('')
   const [wasteKind, setWasteKind] = useState<'term' | 'keyword'>('term')
-  const [sortKey, setSortKey] = useState<keyof CampaignView>('cost')
-  const [sortDir, setSortDir] = useState<1 | -1>(-1)
+  const [campStatus, setCampStatus] = useState<CampStatusFilter>('all')
+  const [wasteQuery, setWasteQuery] = useState('')
+  const [wasteStatus, setWasteStatus] = useState('all')
+  const [wasteOnlyNoConv, setWasteOnlyNoConv] = useState(false)
   const [alertFilter, setAlertFilter] = useState<'all' | CpaAlert['level']>('all')
 
-  const [ai, setAi] = useState<Record<string, { analysis: CpaAiAnalysis; model: string; alerts: CpaAlert[] }>>({})
+  const [ai, setAi] = useState<Record<string, { analysis: CpaAiAnalysis; model: string; usage?: AiUsage | null; alerts: CpaAlert[] }>>({})
   const [aiBusy, setAiBusy] = useState(false)
   const [aiError, setAiError] = useState('')
   const [copied, setCopied] = useState(false)
@@ -271,6 +308,41 @@ export function CpaAnalysisClient() {
   const aiKey = `${focusId}:${days}:${mode}:${scopeKey}:${aiModel.family}`
   const aiResult = ai[aiKey]
 
+  // ── Desperdicio: filtros y ordenación ──
+  const wasteRef = focusCampaignRef ?? 0
+  const wasteAll = useMemo(() => (waste ? (wasteKind === 'term' ? waste.terms : waste.keywords) : []), [waste, wasteKind])
+  const wasteRows = useMemo(() => {
+    const q = wasteQuery.trim().toLowerCase()
+    return wasteAll
+      .map(r => ({ ...r, cpa: r.conversions > 0 ? r.cost / r.conversions : null, flagged: r.conversions === 0 && wasteRef > 0 && r.cost >= 2 * wasteRef }))
+      .filter(r => (!q || r.text.toLowerCase().includes(q))
+        && (wasteStatus === 'all' || r.status === wasteStatus)
+        && (!wasteOnlyNoConv || r.conversions === 0))
+  }, [wasteAll, wasteQuery, wasteStatus, wasteOnlyNoConv, wasteRef])
+  const wasteStatuses = useMemo(() => [...new Set(wasteAll.map(r => r.status).filter((s): s is string => !!s))], [wasteAll])
+  const wasteSort = useSort(wasteRows, 'cost')
+  useEffect(() => { setWasteStatus('all') }, [wasteKind])
+
+  // ── Segmentos, simulador e IA: tablas ordenables ──
+  const convSort = useSort(segments?.conversionsByAction ?? EMPTY_CONV, 'allConv')
+  const sim = sims?.simulations.find(s => `${s.campaignId}:${s.type}` === simId) ?? sims?.simulations[0] ?? null
+  const simRows = useMemo(() => {
+    if (!sim) return []
+    const base = sim.current !== null
+      ? sim.points.reduce((b, p) => (Math.abs(p.x - sim.current!) < Math.abs(b.x - sim.current!) ? p : b), sim.points[0])
+      : null
+    return sim.points.map(p => {
+      const dc = base ? p.conversions - base.conversions : null
+      const dk = base ? p.cost - base.cost : null
+      return {
+        ...p, isBase: base === p, cpaRes: p.conversions > 0 ? p.cost / p.conversions : null, dc, dk,
+        marginal: base !== p && dc && dk !== null && Math.abs(dc) > 0.01 ? dk / dc : null,
+      }
+    })
+  }, [sim])
+  const simSort = useSort(simRows, 'x', 1)
+  const targetsSort = useSort(aiResult?.analysis.targets ?? EMPTY_TARGETS, 'campaign', 1)
+
   // ── IA ──
   async function runAi() {
     if (!focus) return
@@ -311,6 +383,7 @@ export function CpaAnalysisClient() {
       campaigns: [...fv].sort((a, b) => b.cost - a.cost),
       alerts: aiResult?.alerts ?? sortAlerts([...runOverviewRules(focus, mode), ...focusDetailAlerts]),
       analysis: aiResult?.analysis ?? null,
+      usage: aiResult?.usage ?? null,
     }
   }
   function download() {
@@ -329,13 +402,9 @@ export function CpaAnalysisClient() {
     setTimeout(() => URL.revokeObjectURL(url), 60_000)
   }
 
-  const sortedViews = useMemo(() => [...views].sort((a, b) => {
-    const x = a[sortKey], y = b[sortKey]
-    if (x === null || x === undefined) return 1
-    if (y === null || y === undefined) return -1
-    return (x < y ? -1 : x > y ? 1 : 0) * sortDir
-  }), [views, sortKey, sortDir])
-  const sortBy = (k: keyof CampaignView) => { if (k === sortKey) setSortDir(d => (d === 1 ? -1 : 1)); else { setSortKey(k); setSortDir(-1) } }
+  // ── Tablas ordenables ──
+  const campaignRows = useMemo(() => views.filter(v => matchCampStatus(v, campStatus)), [views, campStatus])
+  const campSort = useSort(campaignRows, 'cost')
 
   const multiAccount = selectedIds.length > 1
   const firstOverview = loadedOverviews[0]
@@ -345,12 +414,12 @@ export function CpaAnalysisClient() {
     <div className="flex items-center gap-2 flex-wrap">
       {multiAccount && (
         <select value={focusId} onChange={e => setFocusId(e.target.value)}
-          className="num text-[11px] bg-bg-surface border border-bg-border rounded px-2 py-1.5 text-text-primary max-w-[240px]">
+          className="num text-[12px] bg-bg-surface border border-bg-line rounded-md px-2.5 py-2 text-text-primary placeholder:text-text-soft max-w-[240px]">
           {selectedIds.map(id => <option key={id} value={id}>{getAccountName(id)}</option>)}
         </select>
       )}
       <select value={focusCampaign} onChange={e => setFocusCampaign(e.target.value)}
-        className="num text-[11px] bg-bg-surface border border-bg-border rounded px-2 py-1.5 text-text-primary max-w-[280px]">
+        className="num text-[12px] bg-bg-surface border border-bg-line rounded-md px-2.5 py-2 text-text-primary placeholder:text-text-soft max-w-[280px]">
         <option value="">{strategy === 'cpa' ? 'Todas las campañas CPA' : 'Todas las campañas'}{search ? ' (filtradas)' : ''}</option>
         {focusViews.map(v => <option key={v.id} value={v.id}>{v.name}</option>)}
       </select>
@@ -360,7 +429,7 @@ export function CpaAnalysisClient() {
   const detailState = (kind: string) => {
     const key = detailKey(kind)
     if (detailLoading[key]) return <Empty text="Cargando datos de Google Ads…" />
-    if (detailError[key]) return <p className="num text-[11px] text-red-DEFAULT">{detailError[key]}</p>
+    if (detailError[key]) return <p className="num text-[12px] text-red-DEFAULT">{detailError[key]}</p>
     if (scopeIds && scopeIds.length === 0) return <Empty text="No hay campañas en el filtro actual" />
     return null
   }
@@ -374,10 +443,10 @@ export function CpaAnalysisClient() {
         {/* Cabecera */}
         <div className="flex items-start justify-between gap-4 flex-wrap">
           <div>
-            <p className="num text-[10px] text-text-tertiary tracking-[0.2em] uppercase mb-1">Análisis › CPA</p>
+            <p className="num text-[11px] text-text-soft tracking-[0.2em] uppercase mb-1">Análisis › CPA</p>
             <h1 className="num text-xl font-bold text-text-primary tracking-wide">CPA Analysis</h1>
             {firstOverview && (
-              <p className="num text-[10px] text-text-tertiary mt-1">
+              <p className="num text-[11px] text-text-soft mt-1">
                 {firstOverview.period.start} → {firstOverview.period.end} · comparado con {firstOverview.prevPeriod.start} → {firstOverview.prevPeriod.end}
               </p>
             )}
@@ -387,7 +456,7 @@ export function CpaAnalysisClient() {
             <Seg value={mode} onChange={setMode} options={[{ v: 'primary', l: 'Conv. principales' }, { v: 'all', l: 'Todas las conv.' }]} />
             <Seg value={strategy} onChange={setStrategy} options={[{ v: 'cpa', l: 'Solo CPA' }, { v: 'all', l: 'Todas' }]} />
             <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Buscar campaña…"
-              className="num text-[11px] bg-bg-surface border border-bg-border rounded px-2 py-1.5 text-text-primary w-44" />
+              className="num text-[12px] bg-bg-surface border border-bg-line rounded-md px-2.5 py-2 text-text-primary placeholder:text-text-soft w-44" />
           </div>
         </div>
 
@@ -395,7 +464,7 @@ export function CpaAnalysisClient() {
         <div className="flex gap-1 border-b border-bg-border overflow-x-auto">
           {TABS.map(t => (
             <button key={t.id} onClick={() => setTab(t.id)}
-              className={`num text-[11px] px-4 py-2 tracking-wider border-b-2 -mb-px whitespace-nowrap transition-colors ${tab === t.id ? 'border-cyan-DEFAULT text-cyan-DEFAULT' : 'border-transparent text-text-tertiary hover:text-text-primary'}`}>
+              className={`num text-[13px] px-4 py-2.5 tracking-wide border-b-2 -mb-px whitespace-nowrap transition-colors ${tab === t.id ? 'border-cyan-DEFAULT text-cyan-DEFAULT font-bold' : 'border-transparent text-text-soft hover:text-text-primary'}`}>
               {t.label}{t.id === 'alertas' && allAlerts.length ? ` (${allAlerts.length})` : ''}
             </button>
           ))}
@@ -404,7 +473,7 @@ export function CpaAnalysisClient() {
         {selectedIds.length === 0 && <Card><Empty text="Selecciona una o varias cuentas en el panel izquierdo" /></Card>}
 
         {Object.entries(errors).map(([id, e]) => (
-          <p key={id} className="num text-[11px] text-red-DEFAULT">{getAccountName(id)}: {e}</p>
+          <p key={id} className="num text-[12px] text-red-DEFAULT">{getAccountName(id)}: {e}</p>
         ))}
 
         {selectedIds.length > 0 && !loadedOverviews.length && loading && <Card><Empty text="Cargando campañas…" /></Card>}
@@ -426,7 +495,7 @@ export function CpaAnalysisClient() {
           }
           return (
             <div key={currency} className="space-y-4">
-              {byCurrency.length > 1 && <p className="num text-[11px] text-text-secondary tracking-widest uppercase">Cuentas en {currency}</p>}
+              {byCurrency.length > 1 && <p className="num text-[12px] text-text-secondary tracking-widest uppercase">Cuentas en {currency}</p>}
               <div className="grid grid-cols-2 lg:grid-cols-4 xl:grid-cols-5 gap-3">
                 <Kpi label="Coste" value={fmtMoney(k.cost, currency)} delta={fmtDelta(k.cost, k.prevCost)} />
                 <Kpi label="Conversiones" value={fmtNum(k.conversions, 1)} delta={fmtDelta(k.conversions, k.prevConversions)} />
@@ -444,7 +513,7 @@ export function CpaAnalysisClient() {
               <div className="grid grid-cols-1 xl:grid-cols-3 gap-4">
                 <Card title="Evolución del CPA" className="xl:col-span-2">
                   <TrendChart data={series} currency={currency} refCpa={k.refCpa} />
-                  <p className="num text-[10px] text-text-tertiary mt-2">Barras: conversiones diarias · Línea azul: CPA medio de 7 días · Línea discontinua: referencia. Los últimos días pueden estar incompletos por el retraso de las conversiones.</p>
+                  <p className="num text-[11px] text-text-soft mt-2">Barras: conversiones diarias · Línea azul: CPA medio de 7 días · Línea discontinua: referencia. Los últimos días pueden estar incompletos por el retraso de las conversiones.</p>
                 </Card>
                 <Card title="Semáforo de campañas">
                   <div className="space-y-3">
@@ -454,18 +523,18 @@ export function CpaAnalysisClient() {
                       { l: 'Muy por encima o sin conversiones', n: counts.crit, c: 'text-red-DEFAULT' },
                     ].map(x => (
                       <div key={x.l} className="flex items-center justify-between">
-                        <span className="num text-[11px] text-text-secondary">{x.l}</span>
+                        <span className="num text-[12px] text-text-secondary">{x.l}</span>
                         <span className={`num text-2xl font-bold ${x.c}`}>{x.n}</span>
                       </div>
                     ))}
                   </div>
                   <div className="mt-5 pt-4 border-t border-bg-border">
-                    <p className="num text-[10px] text-text-tertiary tracking-widest uppercase mb-2">Alertas principales</p>
+                    <p className="num text-[11px] text-text-soft tracking-widest uppercase mb-2">Alertas principales</p>
                     {overviewAlerts.filter(a => a.level !== 'info').slice(0, 4).map(a => (
-                      <p key={`${a.account}-${a.id}`} className={`num text-[11px] mb-1 ${LEVEL_CFG[a.level].text}`}>● {a.title}{a.campaign ? ` · ${a.campaign}` : ''}</p>
+                      <p key={`${a.account}-${a.id}`} className={`num text-[12px] mb-1 ${LEVEL_CFG[a.level].text}`}>● {a.title}{a.campaign ? ` · ${a.campaign}` : ''}</p>
                     ))}
-                    {overviewAlerts.length > 0 && <button onClick={() => setTab('alertas')} className="num text-[10px] text-cyan-DEFAULT mt-1">Ver todas →</button>}
-                    {!overviewAlerts.length && <p className="num text-[11px] text-text-tertiary">Sin alertas.</p>}
+                    {overviewAlerts.length > 0 && <button onClick={() => setTab('alertas')} className="num text-[11px] text-cyan-DEFAULT mt-1">Ver todas →</button>}
+                    {!overviewAlerts.length && <p className="num text-[12px] text-text-soft">Sin alertas.</p>}
                   </div>
                 </Card>
               </div>
@@ -481,40 +550,50 @@ export function CpaAnalysisClient() {
                 <QuadrantChart views={vs} currency={currency} />
               </Card>
             ))}
-            <Card title={`Campañas (${views.length})`}>
+            <Card title={`Campañas (${campaignRows.length}${campaignRows.length !== views.length ? ` de ${views.length}` : ''})`} right={
+              <div className="flex items-center gap-2 flex-wrap">
+                <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Filtrar por nombre…"
+                  className="num text-[12px] bg-bg-surface border border-bg-line rounded-md px-2.5 py-2 text-text-primary placeholder:text-text-soft w-52" />
+                <select value={campStatus} onChange={e => setCampStatus(e.target.value as CampStatusFilter)}
+                  className="num text-[12px] bg-bg-surface border border-bg-line rounded-md px-2.5 py-2 text-text-primary">
+                  {CAMP_STATUS_OPTIONS.map(o => <option key={o.v} value={o.v}>{o.l} ({views.filter(v => matchCampStatus(v, o.v)).length})</option>)}
+                </select>
+              </div>
+            }>
               <div className="overflow-x-auto">
-                <table className="w-full num text-[11px]">
+                <table className="w-full num text-[12px]">
                   <thead>
-                    <tr className="text-text-tertiary text-[9px] tracking-widest uppercase border-b border-bg-border">
+                    <tr className="text-text-soft text-[10px] tracking-widest uppercase border-b border-bg-border">
                       {([
-                        ['name', 'Campaña', 'left'], ['biddingType', 'Estrategia', 'left'], ['refCpa', 'Referencia', 'right'],
+                        ['name', 'Campaña', 'left'], ['biddingType', 'Estrategia / estado', 'left'], ['refCpa', 'Referencia', 'right'],
                         ['cost', 'Coste', 'right'], ['conversions', 'Conv.', 'right'], ['cpa', 'CPA', 'right'],
                         ['deviation', 'Desv.', 'right'], ['cpa7', 'CPA 7 d', 'right'], ['prevCpa', 'CPA ant.', 'right'],
                         ['convRate', 'Tasa conv.', 'right'], ['budgetUse', 'Uso ppto.', 'right'], ['isShare', 'IS', 'right'],
                         ['isLostBudget', 'IS perd. ppto.', 'right'], ['isLostRank', 'IS perd. rank.', 'right'],
-                      ] as [keyof CampaignView, string, string][]).map(([k, l, align]) => (
-                        <th key={k} onClick={() => sortBy(k)} className={`py-2 px-2 cursor-pointer hover:text-text-primary whitespace-nowrap text-${align}`}>
-                          {l}{sortKey === k ? (sortDir === -1 ? ' ↓' : ' ↑') : ''}
-                        </th>
+                      ] as [keyof CampaignView, string, 'left' | 'right'][]).map(([k, l, align]) => (
+                        <SortTh key={k} s={campSort} k={k} label={l} align={align} />
                       ))}
                     </tr>
                   </thead>
                   <tbody>
-                    {sortedViews.map(v => (
+                    {campaignRows.length === 0 && (
+                      <tr><td colSpan={14} className="py-6 text-center text-text-soft">Ninguna campaña coincide con los filtros</td></tr>
+                    )}
+                    {campSort.sorted.map(v => (
                       <tr key={`${v.accountId}-${v.id}`} className="border-b border-bg-border/50 hover:bg-bg-hover">
                         <td className="py-2 px-2 max-w-[280px]">
                           <p className="text-text-primary truncate" title={v.name}>{v.name}</p>
-                          {multiAccount && <p className="text-[9px] text-text-tertiary truncate">{v.account}</p>}
+                          {multiAccount && <p className="text-[10px] text-text-soft truncate">{v.account}</p>}
                         </td>
                         <td className="py-2 px-2">
                           <p className="text-text-secondary whitespace-nowrap">{strategyLabel(v.biddingType, v.targetCpa)}</p>
-                          <p className={`text-[9px] whitespace-nowrap ${v.systemStatus?.startsWith('LIMITED') || v.systemStatus?.startsWith('MISCONF') ? 'text-amber-DEFAULT' : v.systemStatus?.startsWith('LEARNING') ? 'text-cyan-DEFAULT' : 'text-text-tertiary'}`}>
-                            {v.portfolioName ? `Cartera · ` : ''}{systemStatusLabel(v.systemStatus)}
+                          <p className={`text-[10px] whitespace-nowrap ${v.status === 'PAUSED' ? 'text-text-soft' : v.systemStatus?.startsWith('LIMITED') || v.systemStatus?.startsWith('MISCONF') ? 'text-amber-DEFAULT' : v.systemStatus?.startsWith('LEARNING') ? 'text-cyan-DEFAULT' : 'text-green-DEFAULT'}`}>
+                            {v.portfolioName ? `Cartera · ` : ''}{v.status === 'PAUSED' ? 'Pausada' : systemStatusLabel(v.systemStatus)}
                           </p>
                         </td>
                         <td className="py-2 px-2 text-right whitespace-nowrap">
                           {fmtMoney(v.refCpa, v.currency)}
-                          {v.refIsAverage && <p className="text-[9px] text-text-tertiary">media cuenta</p>}
+                          {v.refIsAverage && <p className="text-[10px] text-text-soft">media cuenta</p>}
                         </td>
                         <td className="py-2 px-2 text-right">{fmtMoney(v.cost, v.currency, 0)}</td>
                         <td className="py-2 px-2 text-right">{fmtNum(v.conversions, 1)}</td>
@@ -523,7 +602,7 @@ export function CpaAnalysisClient() {
                           {v.deviation === null ? (v.cost > 0 && v.conversions === 0 ? <span className="text-red-DEFAULT">sin conv.</span> : '—') : `${v.deviation > 0 ? '+' : ''}${fmtPct(v.deviation, 0)}`}
                         </td>
                         <td className="py-2 px-2 text-right">{fmtMoney(v.cpa7, v.currency)}</td>
-                        <td className="py-2 px-2 text-right text-text-tertiary">{fmtMoney(v.prevCpa, v.currency)}</td>
+                        <td className="py-2 px-2 text-right text-text-soft">{fmtMoney(v.prevCpa, v.currency)}</td>
                         <td className="py-2 px-2 text-right">{fmtPct(v.convRate, 2)}</td>
                         <td className={`py-2 px-2 text-right ${v.budgetUse !== null && v.budgetUse >= 0.95 ? 'text-amber-DEFAULT' : ''}`}>{fmtPct(v.budgetUse, 0)}</td>
                         <td className="py-2 px-2 text-right">{fmtPct(v.isShare, 0)}</td>
@@ -540,11 +619,11 @@ export function CpaAnalysisClient() {
                 <div className="space-y-1">
                   {loadedOverviews.flatMap(o => o.changes.map(c => ({ ...c, account: o.name, currency: o.currency })))
                     .sort((a, b) => b.date.localeCompare(a.date)).slice(0, 25).map((c, i) => (
-                      <p key={i} className="num text-[11px] text-text-secondary">
-                        <span className="text-text-tertiary">{c.date.slice(0, 10)}</span> · {c.detail}
+                      <p key={i} className="num text-[12px] text-text-secondary">
+                        <span className="text-text-soft">{c.date.slice(0, 10)}</span> · {c.detail}
                         {c.oldValue !== null || c.newValue !== null ? <> ({fmtMoney(c.oldValue, c.currency)} → <span className="text-text-primary">{fmtMoney(c.newValue, c.currency)}</span>)</> : null}
-                        {c.campaign && <span className="text-text-tertiary"> · {c.campaign}</span>}
-                        {multiAccount && <span className="text-text-tertiary"> · {c.account}</span>}
+                        {c.campaign && <span className="text-text-soft"> · {c.campaign}</span>}
+                        {multiAccount && <span className="text-text-soft"> · {c.account}</span>}
                       </p>
                     ))}
                 </div>
@@ -558,7 +637,7 @@ export function CpaAnalysisClient() {
           <>
             <div className="flex items-center justify-between gap-3 flex-wrap">
               {focusBar}
-              <p className="num text-[10px] text-text-tertiary">Referencia: <span className="text-amber-DEFAULT">{fmtMoney(focusCampaignRef, focus.currency)}</span></p>
+              <p className="num text-[11px] text-text-soft">Referencia: <span className="text-amber-DEFAULT">{fmtMoney(focusCampaignRef, focus.currency)}</span></p>
             </div>
             {detailState('segments') ?? (segments && (
               <>
@@ -579,21 +658,23 @@ export function CpaAnalysisClient() {
                 </div>
                 {segments.conversionsByAction.length > 0 && (
                   <Card title="Conversiones por acción">
-                    <table className="w-full num text-[11px]">
-                      <thead><tr className="text-text-tertiary text-[9px] tracking-widest uppercase border-b border-bg-border">
-                        <th className="py-2 px-2 text-left">Acción</th><th className="py-2 px-2 text-right">Conv. principales</th><th className="py-2 px-2 text-right">Todas</th>
+                    <table className="w-full num text-[12px]">
+                      <thead><tr className="text-text-soft text-[10px] tracking-widest uppercase border-b border-bg-border">
+                        <SortTh s={convSort} k="name" label="Acción" align="left" />
+                        <SortTh s={convSort} k="conversions" label="Conv. principales" />
+                        <SortTh s={convSort} k="allConv" label="Todas" />
                       </tr></thead>
-                      <tbody>{segments.conversionsByAction.map(a => (
+                      <tbody>{convSort.sorted.map(a => (
                         <tr key={a.name} className="border-b border-bg-border/50">
                           <td className="py-1.5 px-2 text-text-primary">{a.name}</td>
                           <td className="py-1.5 px-2 text-right">{fmtNum(a.conversions, 1)}</td>
-                          <td className="py-1.5 px-2 text-right text-text-tertiary">{fmtNum(a.allConv, 1)}</td>
+                          <td className="py-1.5 px-2 text-right text-text-soft">{fmtNum(a.allConv, 1)}</td>
                         </tr>
                       ))}</tbody>
                     </table>
                   </Card>
                 )}
-                {segments.unavailable.length > 0 && <p className="num text-[10px] text-text-tertiary">Sin datos disponibles: {segments.unavailable.join(', ')}</p>}
+                {segments.unavailable.length > 0 && <p className="num text-[11px] text-text-soft">Sin datos disponibles: {segments.unavailable.join(', ')}</p>}
               </>
             ))}
           </>
@@ -607,54 +688,74 @@ export function CpaAnalysisClient() {
               <Seg value={wasteKind} onChange={setWasteKind} options={[{ v: 'term', l: 'Términos de búsqueda' }, { v: 'keyword', l: 'Palabras clave' }]} />
             </div>
             {detailState('waste') ?? (waste && (() => {
-              const rows = wasteKind === 'term' ? waste.terms : waste.keywords
               const total = wasteKind === 'term' ? waste.totals.termCost : waste.totals.keywordCost
               const noConv = wasteKind === 'term' ? waste.totals.termCostNoConv : waste.totals.keywordCostNoConv
-              const ref = focusCampaignRef ?? 0
-              const flagged = rows.filter(r => r.conversions === 0 && ref > 0 && r.cost >= 2 * ref)
+              const ref = wasteRef
+              const flagged = wasteRows.filter(r => r.flagged)
               return (
                 <>
                   <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
                     <Kpi label="Gasto analizado" value={fmtMoney(total, focus.currency, 0)} />
                     <Kpi label="Gasto sin conversiones" value={fmtMoney(noConv, focus.currency, 0)} />
                     <Kpi label="% sin conversiones" value={fmtPct(total ? noConv / total : null, 0)} />
-                    <Kpi label={`Con gasto ≥ 2 × ref. sin conv.`} value={String(flagged.length)} />
+                    <Kpi label="Con gasto ≥ 2 × ref. sin conv." value={String(wasteAll.filter(r => r.conversions === 0 && ref > 0 && r.cost >= 2 * ref).length)} />
                   </div>
                   <Card title="Dónde se concentra el gasto sin conversiones">
-                    <ParetoChart rows={rows} currency={focus.currency} />
+                    <ParetoChart rows={wasteAll} currency={focus.currency} />
                   </Card>
-                  <Card title={wasteKind === 'term' ? 'Términos de búsqueda' : 'Palabras clave'} right={flagged.length > 0 && wasteKind === 'term' ? (
+                  <Card title={`${wasteKind === 'term' ? 'Términos de búsqueda' : 'Palabras clave'} (${wasteRows.length}${wasteRows.length !== wasteAll.length ? ` de ${wasteAll.length}` : ''})`} right={flagged.length > 0 && wasteKind === 'term' ? (
                     <button onClick={() => {
                       navigator.clipboard.writeText(flagged.map(r => `[${r.text}]`).join('\n')).then(() => { setCopied(true); setTimeout(() => setCopied(false), 2000) })
-                    }} className="num text-[10px] px-3 py-1 rounded border border-cyan-DEFAULT/40 text-cyan-DEFAULT hover:bg-cyan-DEFAULT/10">
+                    }} className="num text-[12px] px-3 py-2 rounded-md border border-cyan-DEFAULT/40 text-cyan-DEFAULT hover:bg-cyan-DEFAULT/10">
                       {copied ? '✓ Copiadas' : `Copiar ${flagged.length} negativas [exacta]`}
                     </button>
                   ) : undefined}>
-                    <div className="overflow-x-auto max-h-[520px] overflow-y-auto">
-                      <table className="w-full num text-[11px]">
-                        <thead className="sticky top-0 bg-bg-card"><tr className="text-text-tertiary text-[9px] tracking-widest uppercase border-b border-bg-border">
-                          <th className="py-2 px-2 text-left">{wasteKind === 'term' ? 'Término' : 'Palabra clave'}</th>
-                          <th className="py-2 px-2 text-left">Campaña / grupo</th>
-                          <th className="py-2 px-2 text-right">Coste</th><th className="py-2 px-2 text-right">Clics</th>
-                          <th className="py-2 px-2 text-right">Conv.</th><th className="py-2 px-2 text-right">CPA</th>
+                    <div className="flex items-center gap-2 flex-wrap mb-3">
+                      <input value={wasteQuery} onChange={e => setWasteQuery(e.target.value)}
+                        placeholder={wasteKind === 'term' ? 'Filtrar términos por texto…' : 'Filtrar palabras clave por texto…'}
+                        className="num text-[12px] bg-bg-surface border border-bg-line rounded-md px-2.5 py-2 text-text-primary placeholder:text-text-soft w-64" />
+                      <select value={wasteStatus} onChange={e => setWasteStatus(e.target.value)}
+                        className="num text-[12px] bg-bg-surface border border-bg-line rounded-md px-2.5 py-2 text-text-primary">
+                        <option value="all">Todos los estados</option>
+                        {wasteStatuses.map(s => <option key={s} value={s}>{statusLabel(wasteKind, s)} ({wasteAll.filter(r => r.status === s).length})</option>)}
+                      </select>
+                      <label className="num text-[12px] text-text-soft flex items-center gap-2 cursor-pointer select-none">
+                        <input type="checkbox" checked={wasteOnlyNoConv} onChange={e => setWasteOnlyNoConv(e.target.checked)} />
+                        Solo sin conversiones
+                      </label>
+                      {(wasteQuery || wasteStatus !== 'all' || wasteOnlyNoConv) && (
+                        <button onClick={() => { setWasteQuery(''); setWasteStatus('all'); setWasteOnlyNoConv(false) }}
+                          className="num text-[12px] px-3 py-2 rounded-md border border-bg-line text-text-primary hover:bg-bg-hover">Limpiar filtros</button>
+                      )}
+                    </div>
+                    <div className="overflow-x-auto max-h-[560px] overflow-y-auto">
+                      <table className="w-full num text-[12px]">
+                        <thead className="sticky top-0 bg-bg-card"><tr className="text-text-soft text-[10px] tracking-widest uppercase border-b border-bg-border">
+                          <SortTh s={wasteSort} k="text" label={wasteKind === 'term' ? 'Término' : 'Palabra clave'} align="left" />
+                          <SortTh s={wasteSort} k="status" label="Estado" align="left" />
+                          <SortTh s={wasteSort} k="campaign" label="Campaña / grupo" align="left" />
+                          <SortTh s={wasteSort} k="cost" label="Coste" />
+                          <SortTh s={wasteSort} k="clicks" label="Clics" />
+                          <SortTh s={wasteSort} k="conversions" label="Conv." />
+                          <SortTh s={wasteSort} k="cpa" label="CPA" />
                         </tr></thead>
-                        <tbody>{rows.slice(0, 200).map((r, i) => {
-                          const bad = r.conversions === 0 && ref > 0 && r.cost >= 2 * ref
-                          const cpa = r.conversions > 0 ? r.cost / r.conversions : null
-                          return (
-                            <tr key={i} className={`border-b border-bg-border/50 ${bad ? 'bg-red-DEFAULT/5' : ''}`}>
-                              <td className="py-1.5 px-2 text-text-primary">{r.text}{r.matchType && <span className="text-[9px] text-text-tertiary ml-1">{r.matchType.toLowerCase()}</span>}</td>
-                              <td className="py-1.5 px-2 text-text-tertiary max-w-[240px] truncate" title={`${r.campaign} / ${r.adGroup ?? ''}`}>{r.campaign}{r.adGroup ? ` / ${r.adGroup}` : ''}</td>
-                              <td className={`py-1.5 px-2 text-right ${bad ? 'text-red-DEFAULT font-bold' : ''}`}>{fmtMoney(r.cost, focus.currency)}</td>
+                        <tbody>
+                          {wasteRows.length === 0 && <tr><td colSpan={7} className="py-6 text-center text-text-soft">Nada coincide con los filtros</td></tr>}
+                          {wasteSort.sorted.slice(0, 300).map((r, i) => (
+                            <tr key={i} className={`border-b border-bg-border/50 ${r.flagged ? 'bg-red-DEFAULT/5' : ''}`}>
+                              <td className="py-1.5 px-2 text-text-primary">{r.text}{r.matchType && <span className="text-[10px] text-text-soft ml-1">{r.matchType.toLowerCase()}</span>}</td>
+                              <td className={`py-1.5 px-2 whitespace-nowrap ${statusClass(r.status)}`}>{statusLabel(wasteKind, r.status)}</td>
+                              <td className="py-1.5 px-2 text-text-soft max-w-[240px] truncate" title={`${r.campaign} / ${r.adGroup ?? ''}`}>{r.campaign}{r.adGroup ? ` / ${r.adGroup}` : ''}</td>
+                              <td className={`py-1.5 px-2 text-right ${r.flagged ? 'text-red-DEFAULT font-bold' : ''}`}>{fmtMoney(r.cost, focus.currency)}</td>
                               <td className="py-1.5 px-2 text-right">{fmtNum(r.clicks)}</td>
                               <td className="py-1.5 px-2 text-right">{fmtNum(r.conversions, 1)}</td>
-                              <td className={`py-1.5 px-2 text-right ${cpa && ref && cpa > ref * 1.5 ? 'text-amber-DEFAULT' : ''}`}>{fmtMoney(cpa, focus.currency)}</td>
+                              <td className={`py-1.5 px-2 text-right ${r.cpa && ref && r.cpa > ref * 1.5 ? 'text-amber-DEFAULT' : ''}`}>{fmtMoney(r.cpa, focus.currency)}</td>
                             </tr>
-                          )
-                        })}</tbody>
+                          ))}
+                        </tbody>
                       </table>
                     </div>
-                    <p className="num text-[10px] text-text-tertiary mt-2">Se analizan los 500 elementos con más gasto del periodo. En rojo: gasto de al menos 2 veces la referencia ({fmtMoney(ref || null, focus.currency)}) sin conversiones.</p>
+                    <p className="num text-[11px] text-text-soft mt-2">Se analizan los 500 elementos con más gasto del periodo (se muestran hasta 300 tras filtrar). En rojo: gasto de al menos 2 veces la referencia ({fmtMoney(ref || null, focus.currency)}) sin conversiones.</p>
                   </Card>
                 </>
               )
@@ -666,19 +767,15 @@ export function CpaAnalysisClient() {
         {tab === 'simulador' && focus && (
           <>
             <div className="flex items-center justify-between gap-3 flex-wrap">{focusBar}</div>
-            {detailState('simulation') ?? (sims && (sims.simulations.length === 0 ? (
+            {detailState('simulation') ?? (sims && (!sim ? (
               <Card><Empty text="Google no ofrece simulaciones para estas campañas (necesitan historial suficiente con puja por CPA o presupuesto)." /></Card>
             ) : (() => {
-              const sim = sims.simulations.find(s => `${s.campaignId}:${s.type}` === simId) ?? sims.simulations[0]
               const isCpa = sim.type === 'TARGET_CPA'
-              const base = sim.current !== null
-                ? sim.points.reduce((b, p) => (Math.abs(p.x - sim.current!) < Math.abs(b.x - sim.current!) ? p : b), sim.points[0])
-                : null
               return (
                 <>
                   <Card title="Simulación de Google" right={
                     <select value={`${sim.campaignId}:${sim.type}`} onChange={e => setSimId(e.target.value)}
-                      className="num text-[11px] bg-bg-surface border border-bg-border rounded px-2 py-1.5 text-text-primary max-w-[360px]">
+                      className="num text-[12px] bg-bg-surface border border-bg-line rounded-md px-2.5 py-2 text-text-primary max-w-[360px]">
                       {sims.simulations.map(s => (
                         <option key={`${s.campaignId}:${s.type}`} value={`${s.campaignId}:${s.type}`}>
                           {s.campaign} · {s.type === 'TARGET_CPA' ? 'CPA objetivo' : 'Presupuesto'}
@@ -687,38 +784,34 @@ export function CpaAnalysisClient() {
                     </select>
                   }>
                     <SimulationChart sim={sim} currency={focus.currency} />
-                    <p className="num text-[10px] text-text-tertiary mt-2">
+                    <p className="num text-[11px] text-text-soft mt-2">
                       Estimación de Google para {sim.startDate} → {sim.endDate}. Línea azul: conversiones · Línea discontinua: coste · Vertical: valor actual ({fmtMoney(sim.current, focus.currency)}).
                     </p>
                   </Card>
                   <Card title="Escenarios">
-                    <table className="w-full num text-[11px]">
-                      <thead><tr className="text-text-tertiary text-[9px] tracking-widest uppercase border-b border-bg-border">
-                        <th className="py-2 px-2 text-left">{isCpa ? 'CPA objetivo' : 'Presupuesto diario'}</th>
-                        <th className="py-2 px-2 text-right">Coste</th><th className="py-2 px-2 text-right">Conversiones</th>
-                        <th className="py-2 px-2 text-right">CPA resultante</th>
-                        <th className="py-2 px-2 text-right">Δ conv.</th><th className="py-2 px-2 text-right">Δ coste</th>
-                        <th className="py-2 px-2 text-right" title="Coste de cada conversión adicional frente al escenario actual">CPA marginal</th>
+                    <table className="w-full num text-[12px]">
+                      <thead><tr className="text-text-soft text-[10px] tracking-widest uppercase border-b border-bg-border">
+                        <SortTh s={simSort} k="x" label={isCpa ? 'CPA objetivo' : 'Presupuesto diario'} align="left" />
+                        <SortTh s={simSort} k="cost" label="Coste" />
+                        <SortTh s={simSort} k="conversions" label="Conversiones" />
+                        <SortTh s={simSort} k="cpaRes" label="CPA resultante" />
+                        <SortTh s={simSort} k="dc" label="Δ conv." />
+                        <SortTh s={simSort} k="dk" label="Δ coste" />
+                        <SortTh s={simSort} k="marginal" label="CPA marginal" title="Coste de cada conversión adicional frente al escenario actual" />
                       </tr></thead>
-                      <tbody>{sim.points.map((p, i) => {
-                        const dc = base ? p.conversions - base.conversions : null
-                        const dk = base ? p.cost - base.cost : null
-                        const marginal = dc && dk !== null && Math.abs(dc) > 0.01 ? dk / dc : null
-                        const isBase = base === p
-                        return (
-                          <tr key={i} className={`border-b border-bg-border/50 ${isBase ? 'bg-amber-DEFAULT/10' : ''}`}>
-                            <td className="py-1.5 px-2 text-text-primary">{fmtMoney(p.x, focus.currency)}{isBase && <span className="text-amber-DEFAULT text-[9px] ml-1">actual</span>}</td>
-                            <td className="py-1.5 px-2 text-right">{fmtMoney(p.cost, focus.currency, 0)}</td>
-                            <td className="py-1.5 px-2 text-right">{fmtNum(p.conversions, 1)}</td>
-                            <td className="py-1.5 px-2 text-right">{fmtMoney(p.conversions > 0 ? p.cost / p.conversions : null, focus.currency)}</td>
-                            <td className={`py-1.5 px-2 text-right ${dc && dc > 0 ? 'text-green-DEFAULT' : dc && dc < 0 ? 'text-red-DEFAULT' : ''}`}>{dc === null || isBase ? '—' : `${dc > 0 ? '+' : ''}${fmtNum(dc, 1)}`}</td>
-                            <td className="py-1.5 px-2 text-right">{dk === null || isBase ? '—' : `${dk > 0 ? '+' : ''}${fmtMoney(dk, focus.currency, 0)}`}</td>
-                            <td className="py-1.5 px-2 text-right">{isBase ? '—' : fmtMoney(marginal, focus.currency)}</td>
-                          </tr>
-                        )
-                      })}</tbody>
+                      <tbody>{simSort.sorted.map((p, i) => (
+                        <tr key={i} className={`border-b border-bg-border/50 ${p.isBase ? 'bg-amber-DEFAULT/10' : ''}`}>
+                          <td className="py-1.5 px-2 text-text-primary">{fmtMoney(p.x, focus.currency)}{p.isBase && <span className="text-amber-DEFAULT text-[10px] ml-1">actual</span>}</td>
+                          <td className="py-1.5 px-2 text-right">{fmtMoney(p.cost, focus.currency, 0)}</td>
+                          <td className="py-1.5 px-2 text-right">{fmtNum(p.conversions, 1)}</td>
+                          <td className="py-1.5 px-2 text-right">{fmtMoney(p.cpaRes, focus.currency)}</td>
+                          <td className={`py-1.5 px-2 text-right ${p.dc && p.dc > 0 ? 'text-green-DEFAULT' : p.dc && p.dc < 0 ? 'text-red-DEFAULT' : ''}`}>{p.dc === null || p.isBase ? '—' : `${p.dc > 0 ? '+' : ''}${fmtNum(p.dc, 1)}`}</td>
+                          <td className="py-1.5 px-2 text-right">{p.dk === null || p.isBase ? '—' : `${p.dk > 0 ? '+' : ''}${fmtMoney(p.dk, focus.currency, 0)}`}</td>
+                          <td className="py-1.5 px-2 text-right">{p.isBase ? '—' : fmtMoney(p.marginal, focus.currency)}</td>
+                        </tr>
+                      ))}</tbody>
                     </table>
-                    <p className="num text-[10px] text-text-tertiary mt-2">El CPA marginal indica cuánto cuesta cada conversión extra al subir el objetivo: si es mucho mayor que el valor de una conversión para el negocio, no compensa.</p>
+                    <p className="num text-[11px] text-text-soft mt-2">El CPA marginal indica cuánto cuesta cada conversión extra al subir el objetivo: si es mucho mayor que el valor de una conversión para el negocio, no compensa.</p>
                   </Card>
                 </>
               )
@@ -738,7 +831,7 @@ export function CpaAnalysisClient() {
           }>
             <AlertList alerts={alertFilter === 'all' ? allAlerts : allAlerts.filter(a => a.level === alertFilter)} showAccount={multiAccount} />
             {focus && (!segments || !waste) && (
-              <p className="num text-[10px] text-text-tertiary mt-3">
+              <p className="num text-[11px] text-text-soft mt-3">
                 Las alertas de segmentos y desperdicio de {focus.name} aparecen al abrir esas pestañas o al lanzar el análisis IA.
               </p>
             )}
@@ -753,15 +846,15 @@ export function CpaAnalysisClient() {
               {focusBar}
               <div className="flex gap-2">
                 <button onClick={runAi} disabled={aiBusy}
-                  className="num text-[11px] px-4 py-2 rounded bg-cyan-DEFAULT/15 border border-cyan-DEFAULT/40 text-cyan-DEFAULT hover:bg-cyan-DEFAULT/25 disabled:opacity-50">
+                  className="num text-[12px] px-4 py-2 rounded bg-cyan-DEFAULT/15 border border-cyan-DEFAULT/40 text-cyan-DEFAULT hover:bg-cyan-DEFAULT/25 disabled:opacity-50">
                   {aiBusy ? 'Analizando…' : aiResult ? '↻ Volver a analizar' : '✦ Analizar con IA'}
                 </button>
-                <button onClick={openTab} className="num text-[11px] px-3 py-2 rounded border border-bg-border text-text-secondary hover:text-text-primary">Abrir informe</button>
-                <button onClick={download} className="num text-[11px] px-3 py-2 rounded border border-bg-border text-text-secondary hover:text-text-primary">⬇ Descargar HTML</button>
+                <button onClick={openTab} className="num text-[12px] px-3 py-2 rounded border border-bg-line text-text-primary hover:bg-bg-hover">Abrir informe</button>
+                <button onClick={download} className="num text-[12px] px-3 py-2 rounded border border-bg-line text-text-primary hover:bg-bg-hover">⬇ Descargar HTML</button>
               </div>
             </div>
             {aiBusy && <Card><Empty text="Descargando segmentos, desperdicio y simulador, y analizando con IA (puede tardar uno o dos minutos)…" /></Card>}
-            {aiError && <p className="num text-[11px] text-red-DEFAULT">{aiError}</p>}
+            {aiError && <p className="num text-[12px] text-red-DEFAULT">{aiError}</p>}
             {!aiResult && !aiBusy && (
               <Card><Empty text="Pulsa «Analizar con IA» para obtener el diagnóstico experto de esta cuenta con el filtro actual." /></Card>
             )}
@@ -779,11 +872,11 @@ export function CpaAnalysisClient() {
                     <div className="flex gap-6 items-start">
                       <div className="text-center shrink-0">
                         <p className={`num text-5xl font-bold ${color}`}>{a.score}</p>
-                        <p className="num text-[9px] text-text-tertiary tracking-widest uppercase mt-1">Salud CPA</p>
+                        <p className="num text-[10px] text-text-soft tracking-widest uppercase mt-1">Salud CPA</p>
                       </div>
                       <div>
                         <p className="text-sm text-text-primary leading-relaxed">{a.summary}</p>
-                        <p className="num text-[10px] text-text-tertiary mt-2">Modelo: {aiResult.model}</p>
+                        <p className="num text-[11px] text-text-soft mt-2">Modelo: {aiResult.model}</p>
                       </div>
                     </div>
                   </Card>
@@ -798,11 +891,11 @@ export function CpaAnalysisClient() {
                         {a.campaigns.map((c, i) => (
                           <div key={i} className="border border-bg-border rounded-lg p-3">
                             <div className="flex items-center gap-2 mb-1">
-                              <span className={`num text-[9px] px-2 py-0.5 rounded-sm border tracking-widest uppercase ${VERDICT_CLS[c.verdict]}`}>{c.verdict}</span>
+                              <span className={`num text-[10px] px-2 py-0.5 rounded-sm border tracking-widest uppercase ${VERDICT_CLS[c.verdict]}`}>{c.verdict}</span>
                               <p className="num text-xs font-bold text-text-primary">{c.campaign}</p>
                             </div>
-                            <p className="num text-[11px] text-text-secondary">{c.diagnosis}</p>
-                            <p className="num text-[11px] text-cyan-DEFAULT mt-1">→ {c.action}</p>
+                            <p className="num text-[12px] text-text-secondary">{c.diagnosis}</p>
+                            <p className="num text-[12px] text-cyan-DEFAULT mt-1">→ {c.action}</p>
                           </div>
                         ))}
                       </div>
@@ -810,12 +903,14 @@ export function CpaAnalysisClient() {
                   )}
                   {a.targets.length > 0 && (
                     <Card title="CPA objetivo sugerido">
-                      <table className="w-full num text-[11px]">
-                        <thead><tr className="text-text-tertiary text-[9px] tracking-widest uppercase border-b border-bg-border">
-                          <th className="py-2 px-2 text-left">Campaña</th><th className="py-2 px-2 text-right">Actual</th>
-                          <th className="py-2 px-2 text-right">Sugerido</th><th className="py-2 px-2 text-left">Motivo</th>
+                      <table className="w-full num text-[12px]">
+                        <thead><tr className="text-text-soft text-[10px] tracking-widest uppercase border-b border-bg-border">
+                          <SortTh s={targetsSort} k="campaign" label="Campaña" align="left" />
+                          <SortTh s={targetsSort} k="currentTarget" label="Actual" />
+                          <SortTh s={targetsSort} k="suggestedTarget" label="Sugerido" />
+                          <SortTh s={targetsSort} k="rationale" label="Motivo" align="left" />
                         </tr></thead>
-                        <tbody>{a.targets.map((t, i) => (
+                        <tbody>{targetsSort.sorted.map((t, i) => (
                           <tr key={i} className="border-b border-bg-border/50 align-top">
                             <td className="py-2 px-2 text-text-primary">{t.campaign}</td>
                             <td className="py-2 px-2 text-right">{fmtMoney(t.currentTarget, focus.currency)}</td>
@@ -832,12 +927,12 @@ export function CpaAnalysisClient() {
                         {[...a.recommendations].sort((x, y) => ({ alta: 0, media: 1, baja: 2 }[x.priority] - { alta: 0, media: 1, baja: 2 }[y.priority])).map((r, i) => (
                           <div key={i} className="border border-bg-border rounded-lg p-3">
                             <div className="flex items-center gap-2 mb-1 flex-wrap">
-                              <span className={`num text-[9px] px-2 py-0.5 rounded-sm border tracking-widest uppercase ${r.priority === 'alta' ? 'text-red-DEFAULT border-red-DEFAULT/40' : r.priority === 'media' ? 'text-amber-DEFAULT border-amber-DEFAULT/40' : 'text-cyan-DEFAULT border-cyan-DEFAULT/40'}`}>{r.priority}</span>
+                              <span className={`num text-[10px] px-2 py-0.5 rounded-sm border tracking-widest uppercase ${r.priority === 'alta' ? 'text-red-DEFAULT border-red-DEFAULT/40' : r.priority === 'media' ? 'text-amber-DEFAULT border-amber-DEFAULT/40' : 'text-cyan-DEFAULT border-cyan-DEFAULT/40'}`}>{r.priority}</span>
                               <p className="num text-xs font-bold text-text-primary">{r.title}</p>
-                              <span className="num text-[9px] text-text-tertiary ml-auto">confianza {r.confidence}</span>
+                              <span className="num text-[10px] text-text-soft ml-auto">confianza {r.confidence}</span>
                             </div>
-                            <p className="num text-[11px] text-text-secondary">{r.action}</p>
-                            <p className="num text-[10px] text-green-DEFAULT mt-1">Impacto: {r.impact}</p>
+                            <p className="num text-[12px] text-text-secondary">{r.action}</p>
+                            <p className="num text-[11px] text-green-DEFAULT mt-1">Impacto: {r.impact}</p>
                           </div>
                         ))}
                       </div>
@@ -845,9 +940,19 @@ export function CpaAnalysisClient() {
                   )}
                   {a.doNotTouch.length > 0 && (
                     <Card title="Qué no tocar por ahora">
-                      <ul className="space-y-1">{a.doNotTouch.map((x, i) => <li key={i} className="num text-[11px] text-text-secondary">• {x}</li>)}</ul>
+                      <ul className="space-y-1">{a.doNotTouch.map((x, i) => <li key={i} className="num text-[12px] text-text-secondary">• {x}</li>)}</ul>
                     </Card>
                   )}
+                  <Card title="Coste del análisis">
+                    <p className="num text-[13px] text-text-primary">
+                      {aiResult.usage?.costUsd !== null && aiResult.usage?.costUsd !== undefined
+                        ? <>≈ <span className="font-bold text-cyan-DEFAULT">{aiResult.usage.costUsd.toLocaleString('es-ES', { minimumFractionDigits: 4, maximumFractionDigits: 4 })} $</span></>
+                        : 'Coste no disponible'}
+                    </p>
+                    <p className="num text-[11px] text-text-soft mt-1">
+                      {formatUsage(aiResult.usage)} · modelo {aiResult.model}. Importe facturado por OpenRouter para esta llamada (o estimado con su tarifa pública si no lo informa).
+                    </p>
+                  </Card>
                 </>
               )
             })()}
