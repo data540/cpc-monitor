@@ -39,7 +39,7 @@ export function buildCampaignViews(o: CpaOverview, mode: ConvMode): CampaignView
     const avgDaily = c.cost / o.period.days
     return {
       accountId: o.customerId, account: o.name, currency: o.currency,
-      id: c.id, name: c.name, biddingType: c.biddingType, portfolioName: c.portfolioName,
+      id: c.id, name: c.name, status: c.status, biddingType: c.biddingType, portfolioName: c.portfolioName,
       systemStatus: c.systemStatus, targetCpa: c.targetCpa, refCpa, refIsAverage: c.targetCpa === null,
       cost: c.cost, conversions: cv, cpa,
       cpa7:    safeDiv(c.last7.cost, conv(c.last7, mode)),

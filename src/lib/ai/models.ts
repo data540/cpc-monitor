@@ -44,7 +44,8 @@ export interface ModelOption {
 }
 
 const TTL_MS = 6 * 60 * 60 * 1000
-const g = globalThis as unknown as { __aiModels?: { at: number; options: ModelOption[] } }
+type PriceMap = Record<string, { in: number; out: number }>   // USD por millón de tokens
+const g = globalThis as unknown as { __aiModels?: { at: number; options: ModelOption[]; prices: PriceMap } }
 
 // Ordena versiones "6.2" > "6.1" > "6" > "5.5"; a igualdad, la más reciente
 const versionOf = (id: string) => (id.match(/-(\d+(?:\.\d+)?)(?:-|$)/)?.[1] ?? '0').split('.').map(Number)
@@ -68,6 +69,11 @@ export async function getModelOptions(force = false): Promise<ModelOption[]> {
     const res = await fetch('https://openrouter.ai/api/v1/models', { cache: 'no-store', signal: AbortSignal.timeout(8000) })
     if (!res.ok) throw new Error(`OpenRouter ${res.status}`)
     const { data } = await res.json() as { data: any[] }
+    const prices: PriceMap = {}
+    for (const m of data) {
+      const pi = Number(m.pricing?.prompt), po = Number(m.pricing?.completion)
+      if (isFinite(pi) && isFinite(po)) prices[m.id] = { in: pi * 1e6, out: po * 1e6 }
+    }
     const options = MODEL_FAMILIES.map(f => {
       const best = data
         .filter(m => f.pattern.test(m.id))
@@ -81,12 +87,18 @@ export async function getModelOptions(force = false): Promise<ModelOption[]> {
         priceIn: per(best.pricing?.prompt), priceOut: per(best.pricing?.completion), live: true,
       }
     })
-    g.__aiModels = { at: Date.now(), options }
+    g.__aiModels = { at: Date.now(), options, prices }
     return options
   } catch (e) {
     console.warn('[ai/models] catálogo de OpenRouter no disponible:', (e as Error).message)
     return g.__aiModels?.options ?? staticOptions()
   }
+}
+
+// Precios de todos los modelos del catálogo (para estimar el coste de cada análisis)
+export async function getPriceMap(): Promise<PriceMap> {
+  await getModelOptions()
+  return g.__aiModels?.prices ?? {}
 }
 
 // Solo se aceptan modelos de las familias permitidas (evita usar modelos arbitrarios o caros)

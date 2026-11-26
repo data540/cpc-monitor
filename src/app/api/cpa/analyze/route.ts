@@ -59,8 +59,8 @@ export async function POST(request: Request) {
       ...(segments ? runSegmentRules(segments, ref, overview.currency, overview.name, b.mode) : []),
       ...(waste ? runWasteRules(waste, ref, overview.currency, overview.name) : []),
     ])
-    const { analysis, model } = await analyzeCpa(buildPayload(overview, b.mode, alerts, segments, waste, sims), b.model)
-    return NextResponse.json({ analysis, model, alerts })
+    const { analysis, model, usage } = await analyzeCpa(buildPayload(overview, b.mode, alerts, segments, waste, sims), b.model)
+    return NextResponse.json({ analysis, model, usage, alerts })
   } catch (e) {
     console.error('[api/cpa/analyze]', e)
     return NextResponse.json({ error: describeOpenAIError(e) }, { status: 502 })

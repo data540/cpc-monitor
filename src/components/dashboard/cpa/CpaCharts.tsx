@@ -7,11 +7,11 @@ import {
 import type { CampaignSimulation, CampaignView, HeatCell, SegmentRow, WasteRow } from '@/lib/cpa/types'
 import { type ConvMode, type DailyPoint, conv, fmtMoney, fmtNum, fmtPct, safeDiv } from '@/lib/cpa/metrics'
 
-export const C = { cyan: '#00D4FF', amber: '#f59e0b', green: '#22c55e', red: '#ef4444', blue: '#3b82f6', grid: '#1e1e1e', axis: '#6b7280' }
+export const C = { cyan: '#00D4FF', amber: '#f59e0b', green: '#22c55e', red: '#ef4444', blue: '#3b82f6', grid: '#262626', axis: '#a3a3a3' }
 const axisProps = { tick: { fill: C.axis, fontSize: 10 }, stroke: '#2a2a2a' }
 
 function Box({ children }: { children: React.ReactNode }) {
-  return <div className="bg-bg-surface border border-bg-border rounded px-3 py-2 text-[11px] num text-text-primary shadow-lg">{children}</div>
+  return <div className="bg-bg-surface border border-bg-line rounded px-3 py-2 text-[12px] num text-text-primary shadow-lg">{children}</div>
 }
 
 // ── Tendencia diaria: conversiones (barras) + CPA diario y media móvil 7 d + referencia ──
@@ -30,7 +30,7 @@ export function TrendChart({ data, currency, refCpa }: { data: DailyPoint[]; cur
           if (!active || !payload?.length) return null
           const p = payload[0].payload as DailyPoint
           return <Box>
-            <p className="text-text-tertiary mb-1">{String(label)}</p>
+            <p className="text-text-soft mb-1">{String(label)}</p>
             <p>Coste: {fmtMoney(p.cost, currency)}</p>
             <p>Conversiones: {fmtNum(p.conversions, 1)}</p>
             <p>CPA del día: {fmtMoney(p.cpa, currency)}</p>
@@ -84,7 +84,7 @@ export function QuadrantChart({ views, currency }: { views: CampaignView[]; curr
           </Scatter>
         </ScatterChart>
       </ResponsiveContainer>
-      <div className="grid grid-cols-2 gap-2 mt-2 num text-[10px] text-text-tertiary">
+      <div className="grid grid-cols-2 gap-2 mt-2 num text-[11px] text-text-soft">
         <p><span className="text-green-DEFAULT">▲ Abajo a la derecha:</span> mucho gasto y CPA bajo la referencia → escalar</p>
         <p><span className="text-red-DEFAULT">▲ Arriba a la derecha:</span> mucho gasto y CPA alto → prioridad para optimizar</p>
         <p><span className="text-cyan-DEFAULT">● Abajo a la izquierda:</span> poco gasto y buen CPA → probar más presupuesto</p>
@@ -163,9 +163,9 @@ export function Heatmap({ cells, mode, currency, refCpa, metric }: { cells: Heat
     <div className="overflow-x-auto">
       <div className="grid gap-[2px] min-w-[640px]" style={{ gridTemplateColumns: '36px repeat(24, minmax(0, 1fr))' }}>
         <div />
-        {Array.from({ length: 24 }, (_, h) => <div key={h} className="num text-[9px] text-text-tertiary text-center">{h}</div>)}
+        {Array.from({ length: 24 }, (_, h) => <div key={h} className="num text-[10px] text-text-soft text-center">{h}</div>)}
         {DAYS.map((dn, d) => [
-          <div key={`l${d}`} className="num text-[10px] text-text-tertiary flex items-center">{dn}</div>,
+          <div key={`l${d}`} className="num text-[11px] text-text-soft flex items-center">{dn}</div>,
           ...Array.from({ length: 24 }, (_, h) => {
             const c = grid.get(`${d}-${h}`)
             return <div key={`${d}-${h}`} title={title(c, d, h)} className="h-6 rounded-[2px]" style={{ background: color(c) }} />
@@ -173,7 +173,7 @@ export function Heatmap({ cells, mode, currency, refCpa, metric }: { cells: Heat
         ])}
       </div>
       {metric === 'cpa' && (
-        <div className="flex flex-wrap gap-3 mt-3 num text-[10px] text-text-tertiary">
+        <div className="flex flex-wrap gap-3 mt-3 num text-[11px] text-text-soft">
           <span><i className="inline-block w-3 h-3 rounded-sm align-middle mr-1" style={{ background: 'rgba(34,197,94,0.75)' }} />≤ 80 % ref.</span>
           <span><i className="inline-block w-3 h-3 rounded-sm align-middle mr-1" style={{ background: 'rgba(34,197,94,0.4)' }} />≤ ref.</span>
           <span><i className="inline-block w-3 h-3 rounded-sm align-middle mr-1" style={{ background: 'rgba(245,158,11,0.45)' }} />≤ 120 %</span>
@@ -243,5 +243,5 @@ export function SimulationChart({ sim, currency }: { sim: CampaignSimulation; cu
 }
 
 export function Empty({ text }: { text: string }) {
-  return <div className="h-24 flex items-center justify-center num text-[11px] text-text-tertiary">{text}</div>
+  return <div className="h-24 flex items-center justify-center num text-[12px] text-text-soft">{text}</div>
 }

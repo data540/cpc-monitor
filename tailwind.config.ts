@@ -15,11 +15,13 @@ const config: Config = {
           card:    '#161616',
           border:  '#1e1e1e',
           hover:   '#1c1c1c',
+          line:    '#333333',   // bordes de botones y campos visibles
         },
         text: {
           primary:   '#e8e8e8',
           secondary: '#888888',
           tertiary:  '#444444',
+          soft:      '#a3a3a3',   // gris claro legible para opciones y etiquetas
         },
         cyan: {
           dim:     '#002233',

@@ -1,7 +1,7 @@
 // ── Tipos de CPA Analysis ─────────────────────────────────────
 // Compartidos por servidor (recogida, IA) y cliente (gráficas, reglas, informe).
 
-export type CpaPeriod = 7 | 14 | 30 | 90
+export type CpaPeriod = 7 | 14 | 30 | 90 | 180 | 365
 
 export interface DateRange { start: string; end: string }
 
@@ -88,6 +88,7 @@ export interface WasteRow {
   matchType:   string | null
   campaign:    string
   adGroup:     string | null
+  status:      string | null     // palabra clave: ENABLED, PAUSED, AD_GROUP_PAUSED, CAMPAIGN_PAUSED, REMOVED · término: ADDED, EXCLUDED, ADDED_EXCLUDED, NONE
   cost:        number
   clicks:      number
   impressions: number
@@ -164,6 +165,7 @@ export interface CpaReport {
   campaigns:   CampaignView[]
   alerts:      CpaAlert[]
   analysis:    CpaAiAnalysis | null
+  usage?:      import('@/lib/ai/usage').AiUsage | null
 }
 
 // ── Vistas derivadas (cliente) ────────────────────────────────
@@ -181,6 +183,7 @@ export interface CampaignView {
   currency:    string
   id:          string
   name:        string
+  status:      string
   biddingType: string
   portfolioName: string | null
   systemStatus:  string | null

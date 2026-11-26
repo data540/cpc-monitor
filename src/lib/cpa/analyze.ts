@@ -1,7 +1,7 @@
 // ── Análisis experto de CPA con IA (solo servidor) ────────────
 // Reutiliza el proveedor del Audit: OpenAI y, si falla, OpenRouter.
 import { z } from 'zod'
-import { callStructured } from '@/lib/audit/analyze'
+import { type AiUsage, callStructured } from '@/lib/audit/analyze'
 import type { CpaAiAnalysis, CpaAlert, CpaOverview, CpaSegments, CpaSimulations, CpaWaste, SegmentRow } from './types'
 import { type ConvMode, accountAvgCpa, buildCampaignViews, computeKpis, conv, isCpaStrategy, safeDiv, strategyLabel } from './metrics'
 
@@ -144,8 +144,8 @@ export function buildPayload(o: CpaOverview, mode: ConvMode, alerts: CpaAlert[],
   }
 }
 
-export async function analyzeCpa(payload: unknown, model?: string | null): Promise<{ analysis: CpaAiAnalysis; model: string }> {
+export async function analyzeCpa(payload: unknown, model?: string | null): Promise<{ analysis: CpaAiAnalysis; model: string; usage: AiUsage }> {
   const input = `Datos de la cuenta (JSON):\n${JSON.stringify(payload)}`
-  const { value, model: used } = await callStructured('cpa_analysis', SCHEMA, input, v => analysisZ.parse(v), SYSTEM_PROMPT, model)
-  return { analysis: value as CpaAiAnalysis, model: used }
+  const { value, model: used, usage } = await callStructured('cpa_analysis', SCHEMA, input, v => analysisZ.parse(v), SYSTEM_PROMPT, model)
+  return { analysis: value as CpaAiAnalysis, model: used, usage }
 }

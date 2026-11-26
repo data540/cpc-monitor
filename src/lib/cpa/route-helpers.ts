@@ -6,7 +6,7 @@ import { getUserAdsAccounts } from '@/lib/account-access'
 import { requireAdsSession } from '@/lib/audit/route-helpers'
 import type { CollectCtx } from './collect'
 
-export const periodSchema = z.union([z.literal(7), z.literal(14), z.literal(30), z.literal(90)])
+export const periodSchema = z.union([z.literal(7), z.literal(14), z.literal(30), z.literal(90), z.literal(180), z.literal(365)])
 
 export const baseQuerySchema = z.object({
   customerId:  customerIdSchema,

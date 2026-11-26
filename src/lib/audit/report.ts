@@ -3,6 +3,7 @@
 
 import { AREA_LABELS } from './types'
 import type { AccountAuditResult, AuditReport, Finding, AuditArea } from './types'
+import { formatUsage } from '@/lib/ai/usage'
 
 const esc = (s: unknown) => String(s ?? '')
   .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
@@ -221,7 +222,7 @@ export function renderAuditHtml(r: AuditReport): string {
 
   ${r.accounts.map(renderAccount).join('')}
 
-  <footer>Informe generado automáticamente a partir de los datos de Google Ads${r.model ? ' y analizado con IA' : ''}. Revise las recomendaciones antes de aplicarlas.</footer>
+  <footer>Informe generado automáticamente a partir de los datos de Google Ads${r.model ? ' y analizado con IA' : ''}. Revise las recomendaciones antes de aplicarlas.${r.usage ? `<br>Coste estimado del análisis con IA: ${esc(formatUsage(r.usage))}${r.model ? ` (${esc(r.model)})` : ''}` : ''}</footer>
 </div>
 </body>
 </html>`

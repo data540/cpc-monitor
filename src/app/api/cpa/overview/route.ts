@@ -5,7 +5,7 @@ import { collectOverview } from '@/lib/cpa/collect'
 import { cached, parseQuery, resolveCtx } from '@/lib/cpa/route-helpers'
 
 export const dynamic     = 'force-dynamic'
-export const maxDuration = 60
+export const maxDuration = 120 // periodos largos (hasta 365 días)
 
 export async function GET(request: Request) {
   const parsed = parseQuery(request)
