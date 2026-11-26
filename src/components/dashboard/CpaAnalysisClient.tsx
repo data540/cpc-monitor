@@ -4,7 +4,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useAccountContext } from '@/contexts/AccountContext'
 import { AppSidebar } from '@/components/layout/AppSidebar'
 import type {
-  CampaignView, CpaAiAnalysis, CpaAlert, CpaOverview, CpaPeriod, CpaReport, CpaSegments, CpaSimulations, CpaWaste,
+  CampaignView, CpaAiAnalysis, CpaAlert, CpaOverview, CpaPeriod, CpaReport, CpaSegments, CpaSimulations, CpaWaste, WasteRow,
 } from '@/lib/cpa/types'
 import {
   type ConvMode, buildCampaignViews, computeKpis, dailySeries, fmtDelta, fmtMoney, fmtNum, fmtPct,
@@ -62,6 +62,39 @@ const statusLabel = (kind: 'term' | 'keyword', s: string | null) => (s ? (kind =
 const statusClass = (s: string | null) =>
   s === 'ENABLED' ? 'text-green-DEFAULT' : s === 'EXCLUDED' ? 'text-cyan-DEFAULT' : s === 'REMOVED' ? 'text-red-DEFAULT'
     : s === 'ADDED' || s === 'ADDED_EXCLUDED' ? 'text-text-primary' : 'text-amber-DEFAULT'
+
+// ── Exportación de Desperdicio (CSV para Excel en español y TXT) ──
+type ExportRow = WasteRow & { cpa: number | null; flagged: boolean }
+
+function downloadFile(filename: string, content: string, mime: string) {
+  // BOM para que Excel abra bien los acentos
+  const blob = new Blob(['﻿' + content], { type: `${mime};charset=utf-8` })
+  const a = document.createElement('a')
+  a.href = URL.createObjectURL(blob)
+  a.download = filename
+  a.click()
+  setTimeout(() => URL.revokeObjectURL(a.href), 5000)
+}
+
+const csvCell = (v: unknown) => {
+  const s = v === null || v === undefined ? '' : String(v)
+  return /[;"\n\r]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s
+}
+// Números con coma decimal y sin separador de miles (formato que Excel en español interpreta)
+const csvNum = (n: number | null, digits = 2) => (n === null || !isFinite(n) ? '' : n.toFixed(digits).replace('.', ','))
+
+function wasteToCsv(rows: ExportRow[], kind: 'term' | 'keyword', currency: string): string {
+  const header = [kind === 'term' ? 'Término de búsqueda' : 'Palabra clave', 'Concordancia', 'Estado', 'Campaña', 'Grupo de anuncios',
+    `Coste (${currency})`, 'Clics', 'Impresiones', 'Conversiones', `CPA (${currency})`, 'Gasto ≥ 2× ref. sin conversiones']
+  const lines = rows.map(r => [
+    r.text, r.matchType ?? '', statusLabel(kind, r.status), r.campaign, r.adGroup ?? '',
+    csvNum(r.cost), String(r.clicks), String(r.impressions), csvNum(r.conversions), csvNum(r.cpa), r.flagged ? 'Sí' : 'No',
+  ].map(csvCell).join(';'))
+  return [header.map(csvCell).join(';'), ...lines].join('\r\n')
+}
+
+// TXT: un término por línea (sin duplicados), listo para pegar como negativas o palabras clave
+const wasteToTxt = (rows: ExportRow[]) => [...new Set(rows.map(r => r.text))].join('\r\n')
 
 async function getJson<T>(url: string): Promise<T> {
   const res = await fetch(url)
@@ -727,6 +760,21 @@ export function CpaAnalysisClient() {
                         <button onClick={() => { setWasteQuery(''); setWasteStatus('all'); setWasteOnlyNoConv(false) }}
                           className="num text-[12px] px-3 py-2 rounded-md border border-bg-line text-text-primary hover:bg-bg-hover">Limpiar filtros</button>
                       )}
+                      <div className="flex items-center gap-2 ml-auto">
+                        <span className="num text-[11px] text-text-soft">Exportar {wasteRows.length} {wasteKind === 'term' ? 'términos' : 'palabras clave'}:</span>
+                        {(['csv', 'txt'] as const).map(fmt => (
+                          <button key={fmt} disabled={!wasteRows.length}
+                            title={fmt === 'csv' ? 'Todas las columnas, para Excel (separador ;)' : 'Un término por línea, sin duplicados'}
+                            onClick={() => {
+                              const name = `${wasteKind === 'term' ? 'terminos-busqueda' : 'palabras-clave'}-${focus.name.replace(/[^\w-]+/g, '_')}-${focus.period.end}.${fmt}`
+                              if (fmt === 'csv') downloadFile(name, wasteToCsv(wasteSort.sorted, wasteKind, focus.currency), 'text/csv')
+                              else downloadFile(name, wasteToTxt(wasteSort.sorted), 'text/plain')
+                            }}
+                            className="num text-[12px] font-bold px-3 py-2 rounded-md border border-cyan-DEFAULT/40 text-cyan-DEFAULT hover:bg-cyan-DEFAULT/10 disabled:opacity-40 uppercase">
+                            ⬇ {fmt}
+                          </button>
+                        ))}
+                      </div>
                     </div>
                     <div className="overflow-x-auto max-h-[560px] overflow-y-auto">
                       <table className="w-full num text-[12px]">
