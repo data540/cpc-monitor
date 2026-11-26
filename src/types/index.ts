@@ -4,6 +4,8 @@ export interface GoogleAdsAccount {
   id:       string
   name:     string
   currency: string
+  country?: string   // abreviatura conocida (accounts-data), si existe
+  region?:  string   // agrupación conocida (accounts-data), si existe
 }
 
 export interface CampaignMetrics {

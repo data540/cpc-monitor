@@ -121,7 +121,7 @@ export default function LoginPage() {
 
         {/* Footer */}
         <p className="mt-6 num text-[10px] text-text-tertiary tracking-[0.2em] uppercase">
-          v0.1 · Air Europa MCC
+          v0.2
         </p>
       </div>
     </main>

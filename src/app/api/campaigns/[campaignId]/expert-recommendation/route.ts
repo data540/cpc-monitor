@@ -4,6 +4,7 @@ import { prisma } from '@/lib/prisma'
 import { getCpcDistribution } from '@/lib/google-ads'
 import { computeOptimalCeiling } from '@/lib/expert-cpc'
 import { getValidAccessToken } from '@/lib/refresh-token'
+import { resolveLoginCustomerId, AccountAccessError } from '@/lib/account-access'
 import { CampaignMetrics, TrendData } from '@/types'
 
 export async function GET(
@@ -24,6 +25,20 @@ export async function GET(
 
     if (!customerId) {
       return Response.json({ error: 'customerId requerido' }, { status: 400 })
+    }
+
+    // Solo cuentas a las que el usuario tiene acceso; login-customer-id según la cuenta
+    let loginCustomerId: string
+    try {
+      loginCustomerId = await resolveLoginCustomerId(userId, await getValidAccessToken(userId), customerId)
+    } catch (e: any) {
+      if (e instanceof AccountAccessError) {
+        return Response.json({ error: e.message }, { status: 403 })
+      }
+      if (e?.name === 'REAUTH_REQUIRED') {
+        return Response.json({ error: 'Sesión expirada', reauth: true }, { status: 401 })
+      }
+      throw e
     }
 
     // ── Rango de fechas (default: 30 días) ───────────────────────
@@ -129,7 +144,7 @@ export async function GET(
     try {
       const accessToken    = await getValidAccessToken(userId)
       const developerToken = process.env.GOOGLE_ADS_DEVELOPER_TOKEN!
-      const mccCustomerId  = process.env.GOOGLE_ADS_MCC_CUSTOMER_ID
+      const mccCustomerId  = loginCustomerId
 
       distribution = await getCpcDistribution(
         { accessToken, customerId, mccCustomerId, developerToken },

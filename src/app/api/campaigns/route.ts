@@ -5,6 +5,7 @@ import { prisma } from '@/lib/prisma'
 import { getCampaignMetrics } from '@/lib/google-ads'
 import { MANUAL_CPC_CEILINGS } from '@/lib/manual-ceilings'
 import { getValidAccessToken } from '@/lib/refresh-token'
+import { resolveLoginCustomerId, AccountAccessError } from '@/lib/account-access'
 
 export async function GET(request: Request) {
   const session = await getServerSession(authOptions)
@@ -35,6 +36,17 @@ export async function GET(request: Request) {
     return NextResponse.json({ error: e.message }, { status: 401 })
   }
 
+  // Solo cuentas a las que el usuario tiene acceso en Google Ads
+  let loginCustomerId: string
+  try {
+    loginCustomerId = await resolveLoginCustomerId(userId, accessToken, customerId)
+  } catch (e: any) {
+    if (e instanceof AccountAccessError) {
+      return NextResponse.json({ error: e.message }, { status: 403 })
+    }
+    return NextResponse.json({ error: e.message }, { status: 502 })
+  }
+
   // Techos manuales: combinar los del archivo con los guardados en BD
   const dbConfigs = await prisma.cpcConfig.findMany({ where: { userId } })
   const manualCeilings: Record<string, number> = { ...MANUAL_CPC_CEILINGS }
@@ -46,7 +58,7 @@ export async function GET(request: Request) {
     const metrics = await getCampaignMetrics({
       accessToken,
       customerId:     customerId.replace(/-/g, ''),
-      mccCustomerId:  process.env.GOOGLE_ADS_MCC_CUSTOMER_ID,
+      mccCustomerId:  loginCustomerId,
       developerToken: process.env.GOOGLE_ADS_DEVELOPER_TOKEN!,
       manualCeilings,
       dateRangeDays,

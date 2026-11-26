@@ -2,7 +2,6 @@
 
 import { createContext, useContext, useState, useEffect, useCallback, ReactNode } from 'react'
 import { GoogleAdsAccount } from '@/types'
-import { getIdsByRegion } from '@/lib/accounts-data'
 
 interface AccountContextValue {
   accounts:        GoogleAdsAccount[]
@@ -12,7 +11,7 @@ interface AccountContextValue {
   toggleAccount:   (id: string) => void
   clearSelection:  () => void
   selectRegion:    (region: string | null) => void
-  refreshAccounts: () => void
+  refreshAccounts: (force?: boolean) => void
   getAccountName:  (id: string) => string
 }
 
@@ -26,6 +25,9 @@ export function AccountProvider({ children }: { children: ReactNode }) {
   const [selectedIds,     setSelectedIds]     = useState<string[]>([])
   const [selectedRegion,  setSelectedRegion]  = useState<string | null>(null)
   const [accountsLoading, setAccountsLoading] = useState(false)
+  // No persistir hasta haber restaurado: si no, el estado inicial vacío
+  // sobrescribe lo guardado (p. ej. con el doble montaje de Strict Mode).
+  const [hydrated,        setHydrated]        = useState(false)
 
   // Restore from localStorage on mount
   useEffect(() => {
@@ -35,32 +37,46 @@ export function AccountProvider({ children }: { children: ReactNode }) {
       if (ids)    setSelectedIds(JSON.parse(ids))
       if (region) setSelectedRegion(region)
     } catch {}
+    setHydrated(true)
   }, [])
 
   // Persist selectedIds
   useEffect(() => {
+    if (!hydrated) return
     try { localStorage.setItem(STORAGE_IDS, JSON.stringify(selectedIds)) } catch {}
-  }, [selectedIds])
+  }, [selectedIds, hydrated])
 
   // Persist selectedRegion
   useEffect(() => {
+    if (!hydrated) return
     try {
       if (selectedRegion) localStorage.setItem(STORAGE_REGION, selectedRegion)
       else localStorage.removeItem(STORAGE_REGION)
     } catch {}
-  }, [selectedRegion])
+  }, [selectedRegion, hydrated])
 
-  const fetchAccounts = useCallback(async () => {
+  const fetchAccounts = useCallback(async (force = false) => {
     setAccountsLoading(true)
     try {
-      const res  = await fetch('/api/accounts')
+      const res  = await fetch(force ? '/api/accounts?refresh=1' : '/api/accounts')
       const data = await res.json()
-      if (res.ok && data.accounts) setAccounts(data.accounts)
+      if (res.ok && data.accounts) {
+        const list: GoogleAdsAccount[] = data.accounts
+        setAccounts(list)
+        // Descartar de la selección guardada las cuentas a las que este usuario
+        // no tiene acceso (p. ej. otro usuario en el mismo navegador)
+        const allowed = new Set(list.map(a => a.id))
+        setSelectedIds(prev => {
+          const next = prev.filter(id => allowed.has(id))
+          return next.length === prev.length ? prev : next
+        })
+      }
     } catch {}
     finally { setAccountsLoading(false) }
   }, [])
 
-  useEffect(() => { fetchAccounts() }, [fetchAccounts])
+  // Cargar cuentas tras restaurar, para que el filtrado se aplique a lo guardado
+  useEffect(() => { if (hydrated) fetchAccounts() }, [hydrated, fetchAccounts])
 
   const toggleAccount = useCallback((id: string) => {
     setSelectedIds(prev =>
@@ -78,11 +94,11 @@ export function AccountProvider({ children }: { children: ReactNode }) {
   const selectRegion = useCallback((region: string | null) => {
     setSelectedRegion(region)
     if (region) {
-      setSelectedIds(getIdsByRegion(region))
+      setSelectedIds(accounts.filter(a => a.region === region).map(a => a.id))
     } else {
       setSelectedIds([])
     }
-  }, [])
+  }, [accounts])
 
   const getAccountName = useCallback((id: string) =>
     accounts.find(a => a.id === id)?.name ?? id,
