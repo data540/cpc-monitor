@@ -11,11 +11,12 @@ export const AUDIT_MODEL      = process.env.OPENAI_MODEL || 'gpt-5.4-mini'
 const FALLBACK_MODEL          = process.env.OPENROUTER_MODEL || `openai/${AUDIT_MODEL}`
 const REASONING_EFFORT = (process.env.OPENAI_REASONING_EFFORT || 'low') as 'low' | 'medium' | 'high'
 
-// Vercel gratuito: las funciones cortan a los 60 s. Presupuesto total por llamada
-// con margen; si hay respaldo, el principal tiene un tope menor para dejarle tiempo.
-const TOTAL_BUDGET_MS    = 55_000
-const PRIMARY_TIMEOUT_MS = 34_000
-const MIN_FALLBACK_MS    = 12_000
+// Vercel con Fluid compute: las funciones pueden durar hasta 300 s (maxDuration = 300).
+// Presupuesto total por llamada con margen; si hay respaldo, el principal tiene un tope
+// menor para dejarle tiempo.
+const TOTAL_BUDGET_MS    = 240_000
+const PRIMARY_TIMEOUT_MS = 150_000
+const MIN_FALLBACK_MS    = 45_000
 
 const AREAS = ['cuenta', 'conversiones', 'campanas', 'pujas', 'presupuesto', 'palabras_clave',
   'terminos', 'anuncios', 'extensiones', 'segmentos'] as const
@@ -134,17 +135,19 @@ async function viaOpenAI(name: string, schema: object, input: string, timeout: n
 }
 
 // OpenRouter (Chat Completions, compatible con OpenAI)
-async function viaOpenRouter(name: string, schema: object, input: string, timeout: number, system: string): Promise<string> {
-  const res = await getOpenRouter().chat.completions.create({
-    model: FALLBACK_MODEL,
+// `reasoning` es el parámetro unificado de OpenRouter (vale para OpenAI y Claude).
+async function viaOpenRouter(name: string, schema: object, input: string, timeout: number, system: string, model: string = FALLBACK_MODEL): Promise<string> {
+  const body = {
+    model,
     messages: [
-      { role: 'system', content: system },
-      { role: 'user', content: input },
+      { role: 'system' as const, content: system },
+      { role: 'user' as const, content: input },
     ],
     max_completion_tokens: 12_000,
-    ...(supportsReasoning(FALLBACK_MODEL) ? { reasoning_effort: REASONING_EFFORT } : {}),
-    response_format: { type: 'json_schema', json_schema: { name, schema: schema as Record<string, unknown>, strict: true } },
-  }, { timeout })
+    reasoning: { effort: REASONING_EFFORT },
+    response_format: { type: 'json_schema' as const, json_schema: { name, schema: schema as Record<string, unknown>, strict: true } },
+  }
+  const res = await getOpenRouter().chat.completions.create(body as any, { timeout }) as OpenAI.Chat.Completions.ChatCompletion
   const choice = res.choices?.[0]
   if (choice?.finish_reason === 'length') throw new Error('Respuesta incompleta de OpenRouter (límite de longitud)')
   const text = choice?.message?.content
@@ -152,11 +155,30 @@ async function viaOpenRouter(name: string, schema: object, input: string, timeou
   return text
 }
 
-// Intenta OpenAI y, si falla o tarda demasiado, OpenRouter. Devuelve qué modelo respondió.
-export async function callStructured<T>(name: string, schema: object, input: string, validate: (v: unknown) => T, system: string = SYSTEM_PROMPT): Promise<{ value: T; model: string }> {
+// Con modelo elegido por el usuario: OpenRouter con ese modelo y, si falla con tiempo
+// de sobra, el modelo por defecto como respaldo.
+// Sin modelo: OpenAI directo y, si falla o tarda demasiado, OpenRouter.
+// Devuelve qué modelo respondió.
+export async function callStructured<T>(name: string, schema: object, input: string, validate: (v: unknown) => T, system: string = SYSTEM_PROMPT, chosenModel?: string | null): Promise<{ value: T; model: string }> {
   if (!hasOpenAI() && !hasOpenRouter()) throw new Error('Falta OPENAI_API_KEY (u OPENROUTER_API_KEY) en las variables de entorno')
   const started = Date.now()
   let primaryError: unknown = null
+
+  if (chosenModel) {
+    if (!hasOpenRouter()) throw new Error('Falta OPENROUTER_API_KEY para usar el modelo elegido')
+    try {
+      const text = await viaOpenRouter(name, schema, input, TOTAL_BUDGET_MS, system, chosenModel)
+      return { value: validate(JSON.parse(text)), model: chosenModel }
+    } catch (e) {
+      console.warn(`[ai] ${chosenModel} falló:`, describeOpenAIError(e))
+      const remaining = TOTAL_BUDGET_MS - (Date.now() - started)
+      if (chosenModel === FALLBACK_MODEL || remaining < MIN_FALLBACK_MS) throw e
+      try {
+        const text = await viaOpenRouter(name, schema, input, remaining, system)
+        return { value: validate(JSON.parse(text)), model: `${FALLBACK_MODEL} (respaldo: ${chosenModel} falló)` }
+      } catch { throw e }
+    }
+  }
 
   if (hasOpenAI()) {
     try {
@@ -219,13 +241,13 @@ function summarizeAds(d: AccountAuditData) {
   return { total: d.ads.length, por_tipo: byType, por_fuerza: byStrength, por_aprobacion: byApproval }
 }
 
-export async function analyzeAccount(d: AccountAuditData, kpis: AccountKpis, findings: Finding[]): Promise<{ analysis: AccountAnalysis; model: string }> {
+export async function analyzeAccount(d: AccountAuditData, kpis: AccountKpis, findings: Finding[], model?: string | null): Promise<{ analysis: AccountAnalysis; model: string }> {
   const input = `Audita esta cuenta de Google Ads. Datos (JSON):\n${JSON.stringify(compactPayload(d, kpis, findings))}`
-  const { value, model } = await callStructured('auditoria_cuenta', ACCOUNT_SCHEMA, input, v => accountZ.parse(v))
-  return { analysis: value, model }
+  const { value, model: used } = await callStructured('auditoria_cuenta', ACCOUNT_SCHEMA, input, v => accountZ.parse(v), SYSTEM_PROMPT, model)
+  return { analysis: value, model: used }
 }
 
-export async function analyzeGlobal(accounts: { name: string; kpis: AccountKpis; analysis: AccountAnalysis }[]): Promise<GlobalAnalysis> {
+export async function analyzeGlobal(accounts: { name: string; kpis: AccountKpis; analysis: AccountAnalysis }[], model?: string | null): Promise<GlobalAnalysis> {
   const payload = accounts.map(a => ({
     cuenta: a.name, puntuacion: a.analysis.score, resumen: a.analysis.summary,
     coste: Math.round(a.kpis.cost), roas: a.kpis.roas, cpa: a.kpis.cpa,
@@ -233,7 +255,7 @@ export async function analyzeGlobal(accounts: { name: string; kpis: AccountKpis;
     recomendaciones_alta: a.analysis.recommendations.filter(r => r.priority === 'alta').map(r => r.title),
   }))
   const input = `Estas son las auditorías individuales de varias cuentas de un mismo cliente/MCC. Redacta la visión global: estado general, problemas que se repiten y prioridades para el conjunto. Datos (JSON):\n${JSON.stringify(payload)}`
-  return (await callStructured('auditoria_global', GLOBAL_SCHEMA, input, v => globalZ.parse(v))).value
+  return (await callStructured('auditoria_global', GLOBAL_SCHEMA, input, v => globalZ.parse(v), SYSTEM_PROMPT, model)).value
 }
 
 export function describeOpenAIError(e: unknown): string {

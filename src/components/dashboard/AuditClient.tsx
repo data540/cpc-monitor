@@ -4,6 +4,7 @@ import { useState, useMemo, useEffect, useRef } from 'react'
 import { useAccountContext } from '@/contexts/AccountContext'
 import { AppSidebar } from '@/components/layout/AppSidebar'
 import { renderAuditHtml } from '@/lib/audit/report'
+import { ModelPicker, useModelChoice } from './ModelPicker'
 import type {
   AccountAnalysis, AccountAuditData, AccountAuditResult, AccountKpis, AuditReport, Finding, GlobalAnalysis,
 } from '@/lib/audit/types'
@@ -49,6 +50,7 @@ const slug = (s: string) => s.normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/
 
 export function AuditClient() {
   const { accounts, selectedIds, accountsLoading } = useAccountContext()
+  const ai = useModelChoice()
 
   const [mode,     setMode]     = useState<Mode>('several')
   const [chosen,   setChosen]   = useState<string[]>([])
@@ -103,6 +105,7 @@ export function AuditClient() {
     const results = new Map<string, AccountAuditResult>()
     let period: AuditReport['period'] | null = null
     let model: string | null = null
+    const chosenModel = ai.model   // fijo durante toda la auditoría
 
     await runPool(targetIds, CONCURRENCY, async id => {
       const acc = accounts.find(a => a.id === id)!
@@ -122,7 +125,7 @@ export function AuditClient() {
       }
       try {
         set(id, { step: 'analyzing' })
-        const r = await postJson<{ analysis: AccountAnalysis; model: string }>('/api/audit/analyze', collected)
+        const r = await postJson<{ analysis: AccountAnalysis; model: string }>('/api/audit/analyze', { ...collected, model: chosenModel })
         model = r.model
         results.set(id, { ...base, analysis: r.analysis })
         set(id, { step: 'done' })
@@ -147,6 +150,7 @@ export function AuditClient() {
       try {
         const r = await postJson<{ global: GlobalAnalysis }>('/api/audit/global', {
           accounts: analysed.map(a => ({ name: a.name, kpis: a.kpis, analysis: a.analysis })),
+          model: chosenModel,
         })
         global = r.global
         setGlobalStep('done')
@@ -260,6 +264,8 @@ export function AuditClient() {
                 </button>
               ))}
             </div>
+            <h3 className="num text-[10px] text-text-tertiary tracking-widest uppercase mb-3">Modelo de IA</h3>
+            <div className="mb-4"><ModelPicker choice={ai} disabled={running} /></div>
             <p className="text-[11px] text-text-secondary leading-relaxed mb-4">
               Se revisan conversiones, estrategia de puja, presupuesto e Impression Share, palabras clave y Nivel de Calidad,
               términos de búsqueda, anuncios, extensiones, dispositivos, horarios y ubicaciones.

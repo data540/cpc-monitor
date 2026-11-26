@@ -4,9 +4,10 @@ import { NextResponse } from 'next/server'
 import { z } from 'zod'
 import { analyzeGlobal, describeOpenAIError } from '@/lib/audit/analyze'
 import { requireAdsSession } from '@/lib/audit/route-helpers'
+import { modelSchema } from '@/lib/ai/models'
 
 export const dynamic     = 'force-dynamic'
-export const maxDuration = 60
+export const maxDuration = 300 // Fluid compute (plan Hobby: máx. 300 s)
 
 const bodySchema = z.object({
   accounts: z.array(z.object({
@@ -19,6 +20,7 @@ const bodySchema = z.object({
       recommendations: z.array(z.object({ title: z.string(), priority: z.string() }).passthrough()),
     }).passthrough(),
   })).min(2).max(60),
+  model: modelSchema,
 })
 
 export async function POST(request: Request) {
@@ -29,7 +31,7 @@ export async function POST(request: Request) {
   if (!parsed.success) return NextResponse.json({ error: 'Datos inválidos' }, { status: 400 })
 
   try {
-    const global = await analyzeGlobal(parsed.data.accounts as any)
+    const global = await analyzeGlobal(parsed.data.accounts as any, parsed.data.model)
     return NextResponse.json({ global })
   } catch (e) {
     console.error('[api/audit/global]', e)

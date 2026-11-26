@@ -8,17 +8,19 @@ import { describeOpenAIError } from '@/lib/audit/analyze'
 import { analyzeCpa, buildPayload } from '@/lib/cpa/analyze'
 import { referenceCpa } from '@/lib/cpa/metrics'
 import { resolveCtx } from '@/lib/cpa/route-helpers'
+import { modelSchema } from '@/lib/ai/models'
 import { runOverviewRules, runSegmentRules, runWasteRules, sortAlerts } from '@/lib/cpa/rules'
 import type { CpaOverview, CpaSegments, CpaSimulations, CpaWaste } from '@/lib/cpa/types'
 
 export const dynamic     = 'force-dynamic'
-export const maxDuration = 60
+export const maxDuration = 300 // Fluid compute (plan Hobby: máx. 300 s)
 
 const MAX_BODY = 2_000_000 // ~2 MB
 
 const bodySchema = z.object({
   customerId:  customerIdSchema,
   mode:        z.enum(['primary', 'all']).default('primary'),
+  model:       modelSchema,
   overview:    z.object({
     customerId: customerIdSchema, name: z.string(), currency: z.string(),
     campaigns: z.array(z.object({ id: z.string(), cost: z.number() }).passthrough()),
@@ -57,7 +59,7 @@ export async function POST(request: Request) {
       ...(segments ? runSegmentRules(segments, ref, overview.currency, overview.name, b.mode) : []),
       ...(waste ? runWasteRules(waste, ref, overview.currency, overview.name) : []),
     ])
-    const { analysis, model } = await analyzeCpa(buildPayload(overview, b.mode, alerts, segments, waste, sims))
+    const { analysis, model } = await analyzeCpa(buildPayload(overview, b.mode, alerts, segments, waste, sims), b.model)
     return NextResponse.json({ analysis, model, alerts })
   } catch (e) {
     console.error('[api/cpa/analyze]', e)

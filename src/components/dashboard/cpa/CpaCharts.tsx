@@ -15,7 +15,7 @@ function Box({ children }: { children: React.ReactNode }) {
 }
 
 // ── Tendencia diaria: conversiones (barras) + CPA diario y media móvil 7 d + referencia ──
-export function TrendChart({ data, currency, ref: refCpa }: { data: DailyPoint[]; currency: string; ref: number | null }) {
+export function TrendChart({ data, currency, refCpa }: { data: DailyPoint[]; currency: string; refCpa: number | null }) {
   if (!data.length) return <Empty text="Sin datos diarios en el periodo" />
   const maxCpa = Math.max(...data.map(d => Math.max(d.cpa7 ?? 0, refCpa ?? 0)), 1)
   return (

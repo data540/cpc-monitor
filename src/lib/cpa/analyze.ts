@@ -144,8 +144,8 @@ export function buildPayload(o: CpaOverview, mode: ConvMode, alerts: CpaAlert[],
   }
 }
 
-export async function analyzeCpa(payload: unknown): Promise<{ analysis: CpaAiAnalysis; model: string }> {
+export async function analyzeCpa(payload: unknown, model?: string | null): Promise<{ analysis: CpaAiAnalysis; model: string }> {
   const input = `Datos de la cuenta (JSON):\n${JSON.stringify(payload)}`
-  const { value, model } = await callStructured('cpa_analysis', SCHEMA, input, v => analysisZ.parse(v), SYSTEM_PROMPT)
-  return { analysis: value as CpaAiAnalysis, model }
+  const { value, model: used } = await callStructured('cpa_analysis', SCHEMA, input, v => analysisZ.parse(v), SYSTEM_PROMPT, model)
+  return { analysis: value as CpaAiAnalysis, model: used }
 }

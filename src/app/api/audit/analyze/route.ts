@@ -6,10 +6,11 @@ import { customerIdSchema } from '@/lib/validators'
 import { resolveLoginCustomerId, AccountAccessError } from '@/lib/account-access'
 import { analyzeAccount, describeOpenAIError } from '@/lib/audit/analyze'
 import { requireAdsSession } from '@/lib/audit/route-helpers'
+import { modelSchema } from '@/lib/ai/models'
 import type { AccountAuditData, AccountKpis, Finding } from '@/lib/audit/types'
 
 export const dynamic     = 'force-dynamic'
-export const maxDuration = 60
+export const maxDuration = 300 // Fluid compute (plan Hobby: máx. 300 s)
 
 const MAX_BODY = 1_500_000 // ~1.5 MB
 
@@ -17,6 +18,7 @@ const bodySchema = z.object({
   data:     z.object({ customerId: customerIdSchema }).passthrough(),
   kpis:     z.object({ cost: z.number() }).passthrough(),
   findings: z.array(z.object({ id: z.string(), severity: z.string(), title: z.string() }).passthrough()),
+  model:    modelSchema,
 })
 
 export async function POST(request: Request) {
@@ -43,6 +45,7 @@ export async function POST(request: Request) {
       parsed.data.data as unknown as AccountAuditData,
       parsed.data.kpis as unknown as AccountKpis,
       parsed.data.findings as unknown as Finding[],
+      parsed.data.model,
     )
     return NextResponse.json({ analysis, model })
   } catch (e) {

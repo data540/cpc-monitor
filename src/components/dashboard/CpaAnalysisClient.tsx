@@ -12,6 +12,7 @@ import {
 } from '@/lib/cpa/metrics'
 import { runOverviewRules, runSegmentRules, runWasteRules, sortAlerts } from '@/lib/cpa/rules'
 import { renderCpaReportHtml } from '@/lib/cpa/report'
+import { ModelPicker, useModelChoice } from './ModelPicker'
 import {
   type HeatMetric, Empty, Heatmap, ParetoChart, QuadrantChart, SegmentChart, SimulationChart, TrendChart,
 } from './cpa/CpaCharts'
@@ -121,6 +122,7 @@ function AlertList({ alerts, showAccount }: { alerts: CpaAlert[]; showAccount: b
 // ── Componente principal ──────────────────────────────────────
 export function CpaAnalysisClient() {
   const { selectedIds, getAccountName } = useAccountContext()
+  const aiModel = useModelChoice()
 
   const [tab, setTab] = useState<Tab>('resumen')
   const [days, setDays] = useState<CpaPeriod>(30)
@@ -266,7 +268,7 @@ export function CpaAnalysisClient() {
 
   const allAlerts = useMemo(() => sortAlerts([...overviewAlerts, ...focusDetailAlerts]), [overviewAlerts, focusDetailAlerts])
 
-  const aiKey = `${focusId}:${days}:${mode}:${scopeKey}`
+  const aiKey = `${focusId}:${days}:${mode}:${scopeKey}:${aiModel.family}`
   const aiResult = ai[aiKey]
 
   // ── IA ──
@@ -285,7 +287,7 @@ export function CpaAnalysisClient() {
         : focus
       const res = await fetch('/api/cpa/analyze', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ customerId: focusId, mode, overview: ov, segments: s, waste: w, simulations: sm }),
+        body: JSON.stringify({ customerId: focusId, mode, model: aiModel.model, overview: ov, segments: s, waste: w, simulations: sm }),
       })
       const json = await res.json().catch(() => ({}))
       if (!res.ok) throw new Error(json.error ?? `Error ${res.status}`)
@@ -441,7 +443,7 @@ export function CpaAnalysisClient() {
               </div>
               <div className="grid grid-cols-1 xl:grid-cols-3 gap-4">
                 <Card title="Evolución del CPA" className="xl:col-span-2">
-                  <TrendChart data={series} currency={currency} ref={k.refCpa} />
+                  <TrendChart data={series} currency={currency} refCpa={k.refCpa} />
                   <p className="num text-[10px] text-text-tertiary mt-2">Barras: conversiones diarias · Línea azul: CPA medio de 7 días · Línea discontinua: referencia. Los últimos días pueden estar incompletos por el retraso de las conversiones.</p>
                 </Card>
                 <Card title="Semáforo de campañas">
@@ -746,6 +748,7 @@ export function CpaAnalysisClient() {
         {/* ── ANÁLISIS IA ── */}
         {tab === 'ia' && focus && (
           <>
+            <Card title="Modelo de IA"><ModelPicker choice={aiModel} disabled={aiBusy} /></Card>
             <div className="flex items-center justify-between gap-3 flex-wrap">
               {focusBar}
               <div className="flex gap-2">
@@ -757,7 +760,7 @@ export function CpaAnalysisClient() {
                 <button onClick={download} className="num text-[11px] px-3 py-2 rounded border border-bg-border text-text-secondary hover:text-text-primary">⬇ Descargar HTML</button>
               </div>
             </div>
-            {aiBusy && <Card><Empty text="Descargando segmentos, desperdicio y simulador, y analizando con IA (puede tardar hasta un minuto)…" /></Card>}
+            {aiBusy && <Card><Empty text="Descargando segmentos, desperdicio y simulador, y analizando con IA (puede tardar uno o dos minutos)…" /></Card>}
             {aiError && <p className="num text-[11px] text-red-DEFAULT">{aiError}</p>}
             {!aiResult && !aiBusy && (
               <Card><Empty text="Pulsa «Analizar con IA» para obtener el diagnóstico experto de esta cuenta con el filtro actual." /></Card>
