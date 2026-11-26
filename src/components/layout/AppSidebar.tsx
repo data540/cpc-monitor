@@ -214,7 +214,7 @@ function AccountSelector() {
 // ── Sidebar ───────────────────────────────────────────────────
 
 export interface AppSidebarProps {
-  activeSection: 'overview' | 'is-monitor' | 'cpc-analysis' | 'roas-tracker' | 'alerts' | 'reports' | 'config'
+  activeSection: 'overview' | 'is-monitor' | 'cpc-analysis' | 'cpa-analysis' | 'roas-tracker' | 'alerts' | 'reports' | 'audit' | 'config'
   lastUpdate:    Date | null
   loading:       boolean
   onRefresh:     () => void
@@ -251,6 +251,7 @@ export function AppSidebar({
 
         <NavItem icon="◎" label="IS Monitor"       active={activeSection === 'is-monitor'}       href="/dashboard/is-monitor" />
         <NavItem icon="💰" label="CPC Analysis"    active={activeSection === 'cpc-analysis'}     href="/dashboard/cpc-analysis" />
+        <NavItem icon="📉" label="CPA Analysis"    active={activeSection === 'cpa-analysis'}     href="/dashboard/cpa-analysis" />
         <NavItem icon="🎯" label="ROAS Tracker"    active={activeSection === 'roas-tracker'}     href="/dashboard/roas-tracker" />
 
 <div className="pt-3 pb-1">
@@ -259,6 +260,7 @@ export function AppSidebar({
 
         <NavItem icon="🔔" label="Alerts"  active={activeSection === 'alerts'}  href="/dashboard/alerts" />
         <NavItem icon="📅" label="Reports" active={activeSection === 'reports'} href="/dashboard/reports" />
+        <NavItem icon="🔍" label="Audit"   active={activeSection === 'audit'}   href="/dashboard/audit" />
         <NavItem icon="⚙"  label="Config"  active={activeSection === 'config'}  href="/dashboard/config" />
 
         {/* Account selector */}
