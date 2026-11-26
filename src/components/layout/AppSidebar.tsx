@@ -4,7 +4,9 @@ import { useState } from 'react'
 import Link from 'next/link'
 import { signOut } from 'next-auth/react'
 import { useAccountContext } from '@/contexts/AccountContext'
-import { ACCOUNTS_CONFIG, REGIONS } from '@/lib/accounts-data'
+// La lista de cuentas viene de /api/accounts (solo las del usuario): no importar
+// accounts-data aquí para no enviar al navegador cuentas de otros clientes.
+const REGION_ORDER = ['ES', 'EU', 'USA', 'LATAM', 'AF']
 
 // ── Nav item ──────────────────────────────────────────────────
 
@@ -54,17 +56,18 @@ function AccountSelector() {
 
   const selectedCount = selectedIds.length
 
-  // Build display list: merge static config with API-returned names
-  const displayList = ACCOUNTS_CONFIG.filter(cfg => {
+  // Solo las cuentas a las que el usuario tiene acceso (las devuelve /api/accounts)
+  const displayList = accounts.filter(a => {
     const q = filter.toLowerCase()
-    return cfg.name.toLowerCase().includes(q) || cfg.id.includes(q) || cfg.country.toLowerCase().includes(q)
-  }).map(cfg => ({
-    id:       cfg.id,
-    name:     accounts.find(a => a.id === cfg.id)?.name ?? cfg.name,
-    currency: cfg.currency,
-    country:  cfg.country,
-    region:   cfg.region,
-  }))
+    return a.name.toLowerCase().includes(q) || a.id.includes(q) || (a.country ?? '').toLowerCase().includes(q)
+  })
+
+  // Regiones: solo las presentes en las cuentas del usuario, en el orden habitual
+  const present = new Set(accounts.map(a => a.region).filter((r): r is string => !!r))
+  const regions = [
+    ...REGION_ORDER.filter(r => present.has(r)),
+    ...[...present].filter(r => !REGION_ORDER.includes(r)).sort(),
+  ]
 
   return (
     <div className="px-3 pt-3">
@@ -77,9 +80,9 @@ function AccountSelector() {
         )}
       </p>
 
-      {/* Region filter pills — always visible */}
-      <div className="flex flex-wrap gap-1 px-1 mb-2">
-        {REGIONS.map(r => {
+      {/* Region filter pills — solo si el usuario tiene cuentas agrupadas por región */}
+      {regions.length > 0 && <div className="flex flex-wrap gap-1 px-1 mb-2">
+        {regions.map(r => {
           const active = selectedRegion === r
           const base   = REGION_COLORS[r] ?? 'border-[#444] text-text-secondary bg-transparent'
           return (
@@ -102,19 +105,19 @@ function AccountSelector() {
             ×
           </button>
         )}
-      </div>
+      </div>}
 
       {/* Selected accounts chips */}
       {selectedCount > 0 && !selectedRegion && (
         <div className="flex flex-wrap gap-1 mb-2 px-1">
           {selectedIds.slice(0, 4).map(id => {
-            const cfg = ACCOUNTS_CONFIG.find(a => a.id === id)
+            const acc = accounts.find(a => a.id === id)
             return (
               <span
                 key={id}
                 className="num text-[9px] bg-cyan-DEFAULT/10 text-cyan-DEFAULT border border-cyan-DEFAULT/30 rounded px-1.5 py-0.5 flex items-center gap-1"
               >
-                <span className="truncate max-w-[90px]">{cfg?.country ?? id}</span>
+                <span className="truncate max-w-[90px]">{acc?.country ?? acc?.name ?? id}</span>
                 <button onClick={() => toggleAccount(id)} className="text-cyan-DEFAULT/60 hover:text-cyan-DEFAULT leading-none">×</button>
               </span>
             )
@@ -155,11 +158,13 @@ function AccountSelector() {
               <p className="num text-[10px] text-text-tertiary px-3 py-3 tracking-wider">Cargando cuentas...</p>
             )}
             {!accountsLoading && displayList.length === 0 && (
-              <p className="num text-[10px] text-text-tertiary px-3 py-3 tracking-wider">Sin resultados</p>
+              <p className="num text-[10px] text-text-tertiary px-3 py-3 tracking-wider">
+                {accounts.length === 0 ? 'Tu usuario no tiene acceso a ninguna cuenta de Google Ads' : 'Sin resultados'}
+              </p>
             )}
             {!accountsLoading && displayList.map(account => {
               const selected    = selectedIds.includes(account.id)
-              const regionColor = REGION_COLORS[account.region]
+              const regionColor = account.region ? REGION_COLORS[account.region] : ''
               return (
                 <button
                   key={account.id}
@@ -179,9 +184,11 @@ function AccountSelector() {
                     </p>
                     <p className="num text-[9px] text-text-tertiary">{account.id} · {account.currency}</p>
                   </div>
-                  <span className={`num text-[8px] px-1.5 py-0.5 rounded border font-bold tracking-wide flex-shrink-0 ${regionColor}`}>
-                    {account.region}
-                  </span>
+                  {account.region && (
+                    <span className={`num text-[8px] px-1.5 py-0.5 rounded border font-bold tracking-wide flex-shrink-0 ${regionColor}`}>
+                      {account.region}
+                    </span>
+                  )}
                 </button>
               )
             })}

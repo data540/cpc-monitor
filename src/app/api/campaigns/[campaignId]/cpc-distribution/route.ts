@@ -2,6 +2,8 @@ import { getServerSession } from 'next-auth/next'
 import { authOptions } from '@/lib/auth'
 import { getCpcDistribution } from '@/lib/google-ads'
 import { getValidAccessToken } from '@/lib/refresh-token'
+import { resolveLoginCustomerId, AccountAccessError } from '@/lib/account-access'
+import { customerIdSchema, campaignIdSchema } from '@/lib/validators'
 
 export async function GET(
   request: Request,
@@ -17,13 +19,25 @@ export async function GET(
 
     // Parámetros de query
     const { searchParams } = new URL(request.url)
-    const customerId = searchParams.get('customerId')
+    const customerIdRaw = searchParams.get('customerId')
     const startDate = searchParams.get('startDate')
     const endDate = searchParams.get('endDate')
 
-    if (!customerId) {
+    // Validar customerId
+    const customerIdResult = customerIdSchema.safeParse(customerIdRaw)
+    if (!customerIdResult.success) {
       return Response.json(
-        { error: 'customerId parameter required' },
+        { error: 'customerId inválido: debe tener 10 dígitos' },
+        { status: 400 }
+      )
+    }
+    const customerId = customerIdResult.data
+
+    // Validar campaignId
+    const campaignIdResult = campaignIdSchema.safeParse(params.campaignId)
+    if (!campaignIdResult.success) {
+      return Response.json(
+        { error: 'campaignId inválido: debe ser numérico' },
         { status: 400 }
       )
     }
@@ -33,7 +47,16 @@ export async function GET(
 
     // Leer developer token y MCC del ambiente
     const developerToken = process.env.GOOGLE_ADS_DEVELOPER_TOKEN
-    const mccCustomerId = process.env.GOOGLE_ADS_MCC_CUSTOMER_ID
+    // Solo cuentas a las que el usuario tiene acceso; login-customer-id según la cuenta
+    let mccCustomerId: string
+    try {
+      mccCustomerId = await resolveLoginCustomerId(userId, accessToken, customerId)
+    } catch (e) {
+      if (e instanceof AccountAccessError) {
+        return Response.json({ error: e.message }, { status: 403 })
+      }
+      throw e
+    }
 
     if (!developerToken) {
       return Response.json(

@@ -1,6 +1,7 @@
 // ── Endpoint de diagnóstico Google Ads API ────────────────────
 // GET /api/debug
 // Solo lectura — únicamente queries SELECT, sin mutaciones.
+// IMPORTANTE: Solo disponible en desarrollo o con ENABLE_DEBUG=true
 
 import { NextResponse } from 'next/server'
 import { getServerSession } from 'next-auth'
@@ -12,7 +13,18 @@ const ADS_API_BASE = 'https://googleads.googleapis.com/v23'
 const DEVELOPER_TOKEN = process.env.GOOGLE_ADS_DEVELOPER_TOKEN!
 const MCC_CUSTOMER_ID = process.env.GOOGLE_ADS_MCC_CUSTOMER_ID!
 
+// Protección: solo disponible en desarrollo o con ENABLE_DEBUG explícito
+const isDebugEnabled = process.env.NODE_ENV === 'development' || process.env.ENABLE_DEBUG === 'true'
+
 export async function GET(request: Request) {
+  // Verificar si debug está habilitado
+  if (!isDebugEnabled) {
+    return NextResponse.json(
+      { error: 'Endpoint no disponible en producción. Configure ENABLE_DEBUG=true para habilitar.' },
+      { status: 403 }
+    )
+  }
+
   const session = await getServerSession(authOptions)
   if (!session?.user) {
     return NextResponse.json({ error: 'No autenticado' }, { status: 401 })
@@ -44,16 +56,18 @@ export async function GET(request: Request) {
 
   const adsAccount = await prisma.account.findFirst({ where: { userId, provider: 'google-ads' } })
 
+  // Información sanitizada del token (no exponer valores sensibles)
   const results: Record<string, any> = {
     token_info: {
-      provider:          adsAccount ? 'google-ads (dedicado)' : 'google (login)',
-      scopes:            account?.scope ?? 'no disponible',
-      expires_at:        account?.expires_at ? new Date(account.expires_at * 1000).toISOString() : 'no disponible',
+      provider: adsAccount ? 'google-ads (dedicado)' : 'google (login)',
+      has_scopes: !!account?.scope,
+      is_expired: account?.expires_at ? account.expires_at * 1000 < Date.now() : true,
       has_refresh_token: !!account?.refresh_token,
-      ads_token_exists:  !!adsAccount,
-      ads_connect_url:   '/api/auth/google-ads',
+      ads_token_exists: !!adsAccount,
+      ads_connect_url: '/api/auth/google-ads',
     },
-    mcc_customer_id: MCC_CUSTOMER_ID,
+    // No exponer MCC_CUSTOMER_ID directamente en producción
+    mcc_configured: !!MCC_CUSTOMER_ID,
   }
 
   // ── 1. Cuentas accesibles ────────────────────────────────────
