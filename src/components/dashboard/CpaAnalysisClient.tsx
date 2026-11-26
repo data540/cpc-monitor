@@ -14,6 +14,7 @@ import { runOverviewRules, runSegmentRules, runWasteRules, sortAlerts } from '@/
 import { renderCpaReportHtml } from '@/lib/cpa/report'
 import { ModelPicker, useModelChoice } from './ModelPicker'
 import { SortTh, useSort } from './cpa/useSort'
+import { MultiSelect } from './cpa/MultiSelect'
 import { type AiUsage, formatUsage } from '@/lib/ai/usage'
 import {
   type HeatMetric, Empty, Heatmap, ParetoChart, QuadrantChart, SegmentChart, SimulationChart, TrendChart,
@@ -205,7 +206,7 @@ export function CpaAnalysisClient() {
 
   // Cuenta en foco (segmentos, desperdicio, simulador, IA) y campaña opcional
   const [focusId, setFocusId] = useState<string>('')
-  const [focusCampaign, setFocusCampaign] = useState<string>('')
+  const [focusCampaigns, setFocusCampaigns] = useState<string[]>([])
 
   const [detail, setDetail] = useState<Record<string, unknown>>({})         // caché cliente de segmentos/desperdicio/simulador
   const [detailLoading, setDetailLoading] = useState<Record<string, boolean>>({})
@@ -214,9 +215,10 @@ export function CpaAnalysisClient() {
   const [heatMetric, setHeatMetric] = useState<HeatMetric>('cpa')
   const [simId, setSimId] = useState('')
   const [wasteKind, setWasteKind] = useState<'term' | 'keyword'>('term')
-  const [campStatus, setCampStatus] = useState<CampStatusFilter>('all')
+  const [campStatus, setCampStatus] = useState<CampStatusFilter[]>([])
   const [wasteQuery, setWasteQuery] = useState('')
-  const [wasteStatus, setWasteStatus] = useState('all')
+  const [wasteStatus, setWasteStatus] = useState<string[]>([])
+  const [actionQuery, setActionQuery] = useState('')
   const [wasteOnlyNoConv, setWasteOnlyNoConv] = useState(false)
   const [alertFilter, setAlertFilter] = useState<'all' | CpaAlert['level']>('all')
 
@@ -257,7 +259,7 @@ export function CpaAnalysisClient() {
   useEffect(() => {
     if (!selectedIds.includes(focusId)) setFocusId(selectedIds[0] ?? '')
   }, [selectedIds, focusId])
-  useEffect(() => { setFocusCampaign('') }, [focusId])
+  useEffect(() => { setFocusCampaigns([]) }, [focusId])
 
   // ── Vistas derivadas ──
   const allViews = useMemo(() => {
@@ -285,13 +287,19 @@ export function CpaAnalysisClient() {
   const focus = overviews[focusId]
   const focusViews = useMemo(() => views.filter(v => v.accountId === focusId), [views, focusId])
   const scopeIds = useMemo(() => {
-    if (focusCampaign) return [focusCampaign]
+    if (focusCampaigns.length) return [...focusCampaigns].sort()
     if (strategy === 'all' && !search.trim()) return undefined
     return focusViews.map(v => v.id)
-  }, [focusCampaign, strategy, search, focusViews])
+  }, [focusCampaigns, strategy, search, focusViews])
   const scopeKey = scopeIds ? scopeIds.join(',') : ''
   const focusRef = focus ? referenceCpa(focus, mode) : null
-  const focusCampaignRef = focusCampaign ? focusViews.find(v => v.id === focusCampaign)?.refCpa ?? focusRef : focusRef
+  // Una sola campaña: su referencia; varias o todas: media de la cuenta
+  const focusCampaignRef = focusCampaigns.length === 1 ? focusViews.find(v => v.id === focusCampaigns[0])?.refCpa ?? focusRef : focusRef
+  // Si cambian los filtros globales, descarta campañas que ya no están en la lista
+  useEffect(() => {
+    if (!focus) return // datos aún cargando: no descartar la selección
+    setFocusCampaigns(c => { const ok = c.filter(id => focusViews.some(v => v.id === id)); return ok.length === c.length ? c : ok })
+  }, [focusViews, focus])
 
   const detailKey = (kind: string) => `${kind}:${focusId}:${days}:${scopeKey}`
   const loadDetail = useCallback(async <T,>(kind: 'segments' | 'waste' | 'simulation', force = false): Promise<T | null> => {
@@ -349,15 +357,20 @@ export function CpaAnalysisClient() {
     return wasteAll
       .map(r => ({ ...r, cpa: r.conversions > 0 ? r.cost / r.conversions : null, flagged: r.conversions === 0 && wasteRef > 0 && r.cost >= 2 * wasteRef }))
       .filter(r => (!q || r.text.toLowerCase().includes(q))
-        && (wasteStatus === 'all' || r.status === wasteStatus)
+        && (!wasteStatus.length || (r.status !== null && wasteStatus.includes(r.status)))
         && (!wasteOnlyNoConv || r.conversions === 0))
   }, [wasteAll, wasteQuery, wasteStatus, wasteOnlyNoConv, wasteRef])
   const wasteStatuses = useMemo(() => [...new Set(wasteAll.map(r => r.status).filter((s): s is string => !!s))], [wasteAll])
   const wasteSort = useSort(wasteRows, 'cost')
-  useEffect(() => { setWasteStatus('all') }, [wasteKind])
+  useEffect(() => { setWasteStatus([]) }, [wasteKind])
 
   // ── Segmentos, simulador e IA: tablas ordenables ──
-  const convSort = useSort(segments?.conversionsByAction ?? EMPTY_CONV, 'allConv')
+  const convRows = useMemo(() => {
+    const q = actionQuery.trim().toLowerCase()
+    const rows = segments?.conversionsByAction ?? EMPTY_CONV
+    return q ? rows.filter(a => a.name.toLowerCase().includes(q)) : rows
+  }, [segments, actionQuery])
+  const convSort = useSort(convRows, 'allConv')
   const sim = sims?.simulations.find(s => `${s.campaignId}:${s.type}` === simId) ?? sims?.simulations[0] ?? null
   const simRows = useMemo(() => {
     if (!sim) return []
@@ -387,8 +400,8 @@ export function CpaAnalysisClient() {
       // Solo las campañas del filtro actual
       const ids = new Set(focusViews.map(v => v.id))
       const ov: CpaOverview = scopeIds
-        ? { ...focus, campaigns: focus.campaigns.filter(c => ids.has(c.id) && (!focusCampaign || c.id === focusCampaign)),
-            daily: focus.daily.filter(d => ids.has(d.campaignId) && (!focusCampaign || d.campaignId === focusCampaign)) }
+        ? { ...focus, campaigns: focus.campaigns.filter(c => ids.has(c.id) && (!focusCampaigns.length || focusCampaigns.includes(c.id))),
+            daily: focus.daily.filter(d => ids.has(d.campaignId) && (!focusCampaigns.length || focusCampaigns.includes(d.campaignId))) }
         : focus
       const res = await fetch('/api/cpa/analyze', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
@@ -406,7 +419,7 @@ export function CpaAnalysisClient() {
 
   function buildReport(): CpaReport | null {
     if (!focus) return null
-    const fv = focusCampaign ? focusViews.filter(v => v.id === focusCampaign) : focusViews
+    const fv = focusCampaigns.length ? focusViews.filter(v => focusCampaigns.includes(v.id)) : focusViews
     return {
       generatedAt: new Date().toISOString(),
       model: aiResult?.model ?? null,
@@ -436,7 +449,7 @@ export function CpaAnalysisClient() {
   }
 
   // ── Tablas ordenables ──
-  const campaignRows = useMemo(() => views.filter(v => matchCampStatus(v, campStatus)), [views, campStatus])
+  const campaignRows = useMemo(() => views.filter(v => !campStatus.length || campStatus.some(f => matchCampStatus(v, f))), [views, campStatus])
   const campSort = useSort(campaignRows, 'cost')
 
   const multiAccount = selectedIds.length > 1
@@ -446,16 +459,12 @@ export function CpaAnalysisClient() {
   const focusBar = (
     <div className="flex items-center gap-2 flex-wrap">
       {multiAccount && (
-        <select value={focusId} onChange={e => setFocusId(e.target.value)}
-          className="num text-[12px] bg-bg-surface border border-bg-line rounded-md px-2.5 py-2 text-text-primary placeholder:text-text-soft max-w-[240px]">
-          {selectedIds.map(id => <option key={id} value={id}>{getAccountName(id)}</option>)}
-        </select>
+        <MultiSelect multiple={false} value={focusId} onChange={setFocusId} width="w-60"
+          options={selectedIds.map(id => ({ v: id, l: getAccountName(id) }))} />
       )}
-      <select value={focusCampaign} onChange={e => setFocusCampaign(e.target.value)}
-        className="num text-[12px] bg-bg-surface border border-bg-line rounded-md px-2.5 py-2 text-text-primary placeholder:text-text-soft max-w-[280px]">
-        <option value="">{strategy === 'cpa' ? 'Todas las campañas CPA' : 'Todas las campañas'}{search ? ' (filtradas)' : ''}</option>
-        {focusViews.map(v => <option key={v.id} value={v.id}>{v.name}</option>)}
-      </select>
+      <MultiSelect value={focusCampaigns} onChange={setFocusCampaigns} noun="campañas" width="w-80"
+        allLabel={`${strategy === 'cpa' ? 'Todas las campañas CPA' : 'Todas las campañas'}${search ? ' (filtradas)' : ''}`}
+        options={focusViews.map(v => ({ v: v.id, l: v.name }))} />
     </div>
   )
 
@@ -587,10 +596,8 @@ export function CpaAnalysisClient() {
               <div className="flex items-center gap-2 flex-wrap">
                 <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Filtrar por nombre…"
                   className="num text-[12px] bg-bg-surface border border-bg-line rounded-md px-2.5 py-2 text-text-primary placeholder:text-text-soft w-52" />
-                <select value={campStatus} onChange={e => setCampStatus(e.target.value as CampStatusFilter)}
-                  className="num text-[12px] bg-bg-surface border border-bg-line rounded-md px-2.5 py-2 text-text-primary">
-                  {CAMP_STATUS_OPTIONS.map(o => <option key={o.v} value={o.v}>{o.l} ({views.filter(v => matchCampStatus(v, o.v)).length})</option>)}
-                </select>
+                <MultiSelect value={campStatus} onChange={setCampStatus} allLabel="Todos los estados" noun="estados" width="w-56"
+                  options={CAMP_STATUS_OPTIONS.filter(o => o.v !== 'all').map(o => ({ v: o.v, l: o.l, count: views.filter(v => matchCampStatus(v, o.v)).length }))} />
               </div>
             }>
               <div className="overflow-x-auto">
@@ -690,7 +697,10 @@ export function CpaAnalysisClient() {
                   ))}
                 </div>
                 {segments.conversionsByAction.length > 0 && (
-                  <Card title="Conversiones por acción">
+                  <Card title={`Conversiones por acción (${convRows.length}${convRows.length !== segments.conversionsByAction.length ? ` de ${segments.conversionsByAction.length}` : ''})`} right={
+                    <input value={actionQuery} onChange={e => setActionQuery(e.target.value)} placeholder="Filtrar por nombre de acción…"
+                      className="num text-[12px] bg-bg-surface border border-bg-line rounded-md px-2.5 py-2 text-text-primary placeholder:text-text-soft w-64" />
+                  }>
                     <table className="w-full num text-[12px]">
                       <thead><tr className="text-text-soft text-[10px] tracking-widest uppercase border-b border-bg-border">
                         <SortTh s={convSort} k="name" label="Acción" align="left" />
@@ -747,17 +757,14 @@ export function CpaAnalysisClient() {
                       <input value={wasteQuery} onChange={e => setWasteQuery(e.target.value)}
                         placeholder={wasteKind === 'term' ? 'Filtrar términos por texto…' : 'Filtrar palabras clave por texto…'}
                         className="num text-[12px] bg-bg-surface border border-bg-line rounded-md px-2.5 py-2 text-text-primary placeholder:text-text-soft w-64" />
-                      <select value={wasteStatus} onChange={e => setWasteStatus(e.target.value)}
-                        className="num text-[12px] bg-bg-surface border border-bg-line rounded-md px-2.5 py-2 text-text-primary">
-                        <option value="all">Todos los estados</option>
-                        {wasteStatuses.map(s => <option key={s} value={s}>{statusLabel(wasteKind, s)} ({wasteAll.filter(r => r.status === s).length})</option>)}
-                      </select>
+                      <MultiSelect value={wasteStatus} onChange={setWasteStatus} allLabel="Todos los estados" noun="estados" width="w-56"
+                        options={wasteStatuses.map(s => ({ v: s, l: statusLabel(wasteKind, s), count: wasteAll.filter(r => r.status === s).length }))} />
                       <label className="num text-[12px] text-text-soft flex items-center gap-2 cursor-pointer select-none">
                         <input type="checkbox" checked={wasteOnlyNoConv} onChange={e => setWasteOnlyNoConv(e.target.checked)} />
                         Solo sin conversiones
                       </label>
-                      {(wasteQuery || wasteStatus !== 'all' || wasteOnlyNoConv) && (
-                        <button onClick={() => { setWasteQuery(''); setWasteStatus('all'); setWasteOnlyNoConv(false) }}
+                      {(wasteQuery || wasteStatus.length > 0 || wasteOnlyNoConv) && (
+                        <button onClick={() => { setWasteQuery(''); setWasteStatus([]); setWasteOnlyNoConv(false) }}
                           className="num text-[12px] px-3 py-2 rounded-md border border-bg-line text-text-primary hover:bg-bg-hover">Limpiar filtros</button>
                       )}
                       <div className="flex items-center gap-2 ml-auto">
@@ -822,14 +829,8 @@ export function CpaAnalysisClient() {
               return (
                 <>
                   <Card title="Simulación de Google" right={
-                    <select value={`${sim.campaignId}:${sim.type}`} onChange={e => setSimId(e.target.value)}
-                      className="num text-[12px] bg-bg-surface border border-bg-line rounded-md px-2.5 py-2 text-text-primary max-w-[360px]">
-                      {sims.simulations.map(s => (
-                        <option key={`${s.campaignId}:${s.type}`} value={`${s.campaignId}:${s.type}`}>
-                          {s.campaign} · {s.type === 'TARGET_CPA' ? 'CPA objetivo' : 'Presupuesto'}
-                        </option>
-                      ))}
-                    </select>
+                    <MultiSelect multiple={false} value={`${sim.campaignId}:${sim.type}`} onChange={setSimId} width="w-80"
+                      options={sims.simulations.map(s => ({ v: `${s.campaignId}:${s.type}`, l: `${s.campaign} · ${s.type === 'TARGET_CPA' ? 'CPA objetivo' : 'Presupuesto'}` }))} />
                   }>
                     <SimulationChart sim={sim} currency={focus.currency} />
                     <p className="num text-[11px] text-text-soft mt-2">
