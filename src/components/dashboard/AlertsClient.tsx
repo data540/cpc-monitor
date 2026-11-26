@@ -4,6 +4,9 @@ import { useState, useEffect, useCallback } from 'react'
 import { useAccountContext } from '@/contexts/AccountContext'
 import { AppSidebar } from '@/components/layout/AppSidebar'
 import { CampaignMetrics } from '@/types'
+import { runOverviewRules } from '@/lib/cpa/rules'
+import { isCpaStrategy } from '@/lib/cpa/metrics'
+import type { CpaOverview } from '@/lib/cpa/types'
 
 interface Props {
   user: { id: string; name?: string; email?: string; image?: string }
@@ -21,6 +24,7 @@ interface Alert {
   level: AlertLevel
   title: string
   description: string
+  account?: string
   campaign?: string
   value?: string
   timestamp: Date
@@ -136,6 +140,7 @@ export function AlertsClient({ user }: Props) {
   const [lastUpdate, setLastUpdate] = useState<Date | null>(null)
   const [filter, setFilter] = useState<AlertLevel | 'all'>('all')
   const [dismissed, setDismissed] = useState<Set<string>>(new Set())
+  const [cpaAlerts, setCpaAlerts] = useState<Alert[]>([])
 
   const load = useCallback(async (cids: string[]) => {
     const valid = cids.filter(isValidCustomerId)
@@ -150,6 +155,18 @@ export function AlertsClient({ user }: Props) {
         })
       )
       setCampaigns(results.flat())
+
+      // Alertas de CPA (CPA Analysis) solo para cuentas con campañas de puja por CPA
+      const overviews = await Promise.all(valid.map(cid =>
+        fetch(`/api/cpa/overview?customerId=${normalizeCustomerId(cid)}&days=30`)
+          .then(r => (r.ok ? r.json() as Promise<CpaOverview> : null)).catch(() => null)))
+      const now = new Date()
+      setCpaAlerts(overviews
+        .filter((o): o is CpaOverview => !!o && o.campaigns.some(c => isCpaStrategy(c.biddingType)))
+        .flatMap(o => runOverviewRules(o).map(a => ({
+          id: `${o.customerId}-${a.id}`, level: a.level, title: `CPA · ${a.title}`, description: a.description,
+          campaign: a.campaign, value: a.value, account: o.name, timestamp: now,
+        }))))
       setLastUpdate(new Date())
     } catch { }
     setLoading(false)
@@ -157,10 +174,10 @@ export function AlertsClient({ user }: Props) {
 
   useEffect(() => {
     if (selectedIds.length > 0) load(selectedIds)
-    else setCampaigns([])
+    else { setCampaigns([]); setCpaAlerts([]) }
   }, [selectedIds, load])
 
-  const allAlerts = generateAlerts(campaigns).filter(a => !dismissed.has(a.id))
+  const allAlerts = [...generateAlerts(campaigns), ...cpaAlerts].filter(a => !dismissed.has(a.id))
   const filtered = filter === 'all' ? allAlerts : allAlerts.filter(a => a.level === filter)
 
   const criticalCount = allAlerts.filter(a => a.level === 'critical').length
@@ -255,6 +272,11 @@ export function AlertsClient({ user }: Props) {
                         </div>
                         <p className="num text-[11px] text-text-secondary mb-2">{alert.description}</p>
                         <div className="flex items-center gap-4 flex-wrap">
+                          {alert.account && (
+                            <p className="num text-[10px] text-text-tertiary truncate max-w-[220px]">
+                              <span className="text-text-secondary">Cuenta:</span> {alert.account}
+                            </p>
+                          )}
                           {alert.campaign && (
                             <p className="num text-[10px] text-text-tertiary truncate max-w-[300px]">
                               <span className="text-text-secondary">Campaña:</span> {alert.campaign}
